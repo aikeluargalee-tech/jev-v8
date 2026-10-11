@@ -289,7 +289,7 @@ function renderRecord(rec) {
     document.getElementById("freshness-text").textContent = `Freshness: ${market.freshness_market_s}s`;
     document.getElementById("market-price").textContent = `$${market.last_price.toLocaleString()}`;
     document.getElementById("funding-rate").textContent = rec.categorical.derivatives_cat.funding_cat !== "unavailable" ? `${(rec.market.funding_rate_pct || 0).toFixed(4)}%` : "Unavailable";
-    document.getElementById("rsi-val").textContent = features.rsi14 ? `${features.rsi14} (${features.rsi_dir})` : "--";
+    document.getElementById("rsi-val").textContent = features.rsi14 ? `${features.rsi14} (${features.rsi_dir || 'flat'})` : "--";
     document.getElementById("atr-val").textContent = features.atr14 ? `$${features.atr14} (${features.atr_pct}%)` : "--";
     if (document.getElementById("er-val")) {
         const er = features.er20 !== undefined && features.er20 !== null ? features.er20.toFixed(3) : "--";
@@ -377,6 +377,110 @@ function renderRecord(rec) {
     const erRegime = features.er_regime || "unknown";
     const bosText = features.bos || "NO_BREAK";
     renderPillar("soc", effState, `ER20: ${erText} (${erRegime}) | ${bosText}`);
+
+    // 4.5 Upgraded Quantitative Indicator Matrix
+    // 1. ER20
+    const tileValEr = document.getElementById("tile-val-er");
+    const tileBadgeEr = document.getElementById("tile-badge-er");
+    const tileFootEr = document.getElementById("tile-foot-er");
+    if (tileValEr && features.er20 !== undefined && features.er20 !== null) {
+        tileValEr.textContent = `ER: ${features.er20.toFixed(4)}`;
+        if (tileBadgeEr) {
+            const isChop = features.er20 < 0.25;
+            tileBadgeEr.textContent = isChop ? `CHOP (< 0.25)` : `TRENDING (> 0.25)`;
+            tileBadgeEr.className = `tile-badge ${isChop ? 'badge-chop' : 'badge-bull'}`;
+        }
+        if (tileFootEr) {
+            tileFootEr.textContent = features.er20 < 0.25 ? "🛡️ Gate 1: Hard ABSTAIN Active" : "✅ Gate 1: Trend Progress Valid";
+        }
+    }
+
+    // 2. BOS / Range
+    const tileValRange = document.getElementById("tile-val-range");
+    const tileBadgeBos = document.getElementById("tile-badge-bos");
+    const tileFootBos = document.getElementById("tile-foot-bos");
+    if (tileValRange && features.range_low && features.range_high) {
+        tileValRange.textContent = `$${Math.round(features.range_low).toLocaleString()} – $${Math.round(features.range_high).toLocaleString()}`;
+        if (tileBadgeBos) {
+            const bos = features.bos || "INSIDE_RANGE";
+            tileBadgeBos.textContent = bos.replace("_", " ");
+            tileBadgeBos.className = `tile-badge ${bos === 'BOS_BULLISH' ? 'badge-bull' : (bos === 'BOS_BEARISH' ? 'badge-bear' : 'badge-neutral')}`;
+        }
+        if (tileFootBos) {
+            tileFootBos.textContent = "20-Candle Range Reference";
+        }
+    }
+
+    // 3. 1D Macro Trend
+    const tileValMacro = document.getElementById("tile-val-macro-ema");
+    const tileBadgeMacro = document.getElementById("tile-badge-macro");
+    const tileFootMacro = document.getElementById("tile-foot-macro");
+    if (tileValMacro) {
+        const e20 = features.ema20_1d ? `$${(features.ema20_1d / 1000).toFixed(1)}k` : "--";
+        const e200 = features.ema200_1d ? `$${(features.ema200_1d / 1000).toFixed(1)}k` : "--";
+        tileValMacro.textContent = `EMA20: ${e20} | EMA200: ${e200}`;
+        if (tileBadgeMacro) {
+            const mac = features.macro_trend ? features.macro_trend.toUpperCase() : "NEUTRAL";
+            tileBadgeMacro.textContent = mac;
+            tileBadgeMacro.className = `tile-badge ${mac === 'BULLISH' ? 'badge-bull' : (mac === 'BEARISH' ? 'badge-bear' : 'badge-neutral')}`;
+        }
+        if (tileFootMacro) {
+            tileFootMacro.textContent = features.macro_trend === 'neutral' ? "Pullback / Range Consolidation" : (features.macro_trend === 'bullish' ? "Bullish Trend Expansion" : "Bearish Trend Expansion");
+        }
+    }
+
+    // 4. Triple EMA Stack
+    const tileValEma = document.getElementById("tile-val-ema-stack");
+    const tileBadgeEma = document.getElementById("tile-badge-ema");
+    const tileFootEma = document.getElementById("tile-foot-ema");
+    if (tileValEma) {
+        const e20 = features.ema20 ? `$${(features.ema20 / 1000).toFixed(1)}k` : "--";
+        const e50 = features.ema50 ? `$${(features.ema50 / 1000).toFixed(1)}k` : "--";
+        const e200 = features.ema200 ? `$${(features.ema200 / 1000).toFixed(1)}k` : "--";
+        tileValEma.textContent = `20: ${e20} | 50: ${e50} | 200: ${e200}`;
+        if (tileBadgeEma) {
+            const st = rec.categorical.market_cat.ema_stack ? rec.categorical.market_cat.ema_stack.toUpperCase() : "MIXED";
+            tileBadgeEma.textContent = st;
+            tileBadgeEma.className = `tile-badge ${st === 'BULLISH' ? 'badge-bull' : (st === 'BEARISH' ? 'badge-bear' : 'badge-neutral')}`;
+        }
+        if (tileFootEma) {
+            tileFootEma.textContent = `Position: ${rec.categorical.market_cat.ema200_pos.toUpperCase()} 4H EMA200`;
+        }
+    }
+
+    // 5. RSI 14
+    const tileValRsi = document.getElementById("tile-val-rsi");
+    const tileBadgeRsi = document.getElementById("tile-badge-rsi");
+    const tileFootRsi = document.getElementById("tile-foot-rsi");
+    if (tileValRsi && features.rsi14) {
+        tileValRsi.textContent = `RSI: ${features.rsi14.toFixed(1)} (${features.rsi_dir || 'flat'})`;
+        if (tileBadgeRsi) {
+            const cat = rec.categorical.market_cat.rsi_cat ? rec.categorical.market_cat.rsi_cat.toUpperCase() : "NEUTRAL";
+            tileBadgeRsi.textContent = cat;
+            tileBadgeRsi.className = `tile-badge ${cat === 'OVERSOLD' ? 'badge-bull' : (cat === 'OVERBOUGHT' ? 'badge-bear' : 'badge-neutral')}`;
+        }
+        if (tileFootRsi) {
+            tileFootRsi.textContent = features.rsi14 > 70 ? "Overbought Warning" : (features.rsi14 < 30 ? "Oversold Absorption" : "Momentum: Subdued");
+        }
+    }
+
+    // 6. Volume & Flow
+    const tileValVol = document.getElementById("tile-val-vol");
+    const tileBadgeVol = document.getElementById("tile-badge-vol");
+    const tileFootVol = document.getElementById("tile-foot-vol");
+    if (tileValVol) {
+        const vz = features.vol_z !== undefined && features.vol_z !== null ? `${features.vol_z.toFixed(2)}σ` : "--";
+        const cvd = features.cvd_24h !== undefined && features.cvd_24h !== null ? `${features.cvd_24h > 0 ? '+' : ''}${features.cvd_24h.toFixed(1)} BTC` : "--";
+        tileValVol.textContent = `Vol Z: ${vz} | CVD: ${cvd}`;
+        if (tileBadgeVol) {
+            const vr = rec.categorical.market_cat.vol_regime ? rec.categorical.market_cat.vol_regime.toUpperCase() : "NORMAL";
+            tileBadgeVol.textContent = `${vr} VOL`;
+            tileBadgeVol.className = `tile-badge ${vr === 'HIGH' ? 'badge-bull' : 'badge-neutral'}`;
+        }
+        if (tileFootVol) {
+            tileFootVol.textContent = "Baseline: 30d Excl. Current Bar";
+        }
+    }
 
     // 5. Decision Levels (Element 6)
     const shadowBox = document.getElementById("shadow-locked-box");

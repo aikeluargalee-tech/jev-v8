@@ -175,6 +175,7 @@ async def run_v8_evaluation(
             "ema50": features.get("ema50"),
             "ema200": features.get("ema200"),
             "rsi14": features.get("rsi14"),
+            "rsi_dir": features.get("rsi_dir", "flat"),
             "atr14": features.get("atr14"),
             "atr_pct": features.get("atr_pct"),
             "vol_z": features.get("vol_z"),
@@ -185,6 +186,7 @@ async def run_v8_evaluation(
             "range_high": features.get("range_high"),
             "range_low": features.get("range_low"),
             "macro_trend": macro_info.get("macro_trend"),
+            "ema20_1d": macro_info.get("ema20_1d"),
             "ema50_1d": macro_info.get("ema50_1d"),
             "ema200_1d": macro_info.get("ema200_1d")
         },

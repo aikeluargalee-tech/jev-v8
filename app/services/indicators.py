@@ -160,34 +160,51 @@ def check_break_of_structure(
 def compute_macro_trend(candles_1d: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     Computes Daily Macro Trend from 1D closed candles.
-    Evaluates 1D EMA50, EMA200, and last daily close.
-    Returns dict with macro_trend ("bullish" | "bearish" | "neutral" | "unknown"), ema50_1d, ema200_1d.
+    Evaluates 1D EMA20, EMA50, EMA200, and last daily close.
+    Classifications:
+      - 'bullish': Strong trending expansion (Close > EMA20 > EMA50 > EMA200)
+      - 'bearish': Strong downtrend expansion (Close < EMA20 < EMA50 < EMA200)
+      - 'neutral': Pullback, consolidation, or transition range (e.g. above EMA200 but below EMA20)
     """
     if not candles_1d or len(candles_1d) < 50:
-        return {"macro_trend": "unknown", "ema50_1d": None, "ema200_1d": None, "last_close_1d": None}
+        return {
+            "macro_trend": "unknown",
+            "ema20_1d": None,
+            "ema50_1d": None,
+            "ema200_1d": None,
+            "last_close_1d": None
+        }
 
     closes_1d = [c["close"] for c in candles_1d]
+    ema20_series = ema(closes_1d, 20)
     ema50_series = ema(closes_1d, 50)
     ema200_series = ema(closes_1d, 200)
 
+    ema20_val = ema20_series[-1] if ema20_series else None
     ema50_val = ema50_series[-1] if ema50_series else None
     ema200_val = ema200_series[-1] if ema200_series else None
     last_close = closes_1d[-1]
 
-    if ema200_val is not None:
-        if last_close > ema200_val and (ema50_val is None or ema50_val >= ema200_val):
+    if ema200_val is not None and ema50_val is not None and ema20_val is not None:
+        if last_close > ema20_val and ema20_val > ema50_val and ema50_val > ema200_val:
             macro_trend = "bullish"
-        elif last_close < ema200_val and (ema50_val is None or ema50_val <= ema200_val):
+        elif last_close < ema20_val and ema20_val < ema50_val and ema50_val < ema200_val:
             macro_trend = "bearish"
         else:
             macro_trend = "neutral"
-    elif ema50_val is not None:
-        macro_trend = "bullish" if last_close > ema50_val else "bearish"
+    elif ema200_val is not None:
+        if last_close > ema200_val and (ema50_val is None or last_close > ema50_val):
+            macro_trend = "bullish"
+        elif last_close < ema200_val and (ema50_val is None or last_close < ema50_val):
+            macro_trend = "bearish"
+        else:
+            macro_trend = "neutral"
     else:
         macro_trend = "unknown"
 
     return {
         "macro_trend": macro_trend,
+        "ema20_1d": round(ema20_val, 2) if ema20_val else None,
         "ema50_1d": round(ema50_val, 2) if ema50_val else None,
         "ema200_1d": round(ema200_val, 2) if ema200_val else None,
         "last_close_1d": round(last_close, 2)

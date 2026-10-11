@@ -4,12 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Jev v8 — Pure Decision-Support Terminal</title>
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="app/static/css/style.css">
+    <link rel="stylesheet" href="app/static/css/style.css?v=8.2.0">
 </head>
 
 <body>
@@ -163,6 +166,79 @@
                             </div>
                             <p class="pillar-detail" id="detail-soc">Kaufman ER20 & 20-Bar BOS</p>
                             <p class="plain-english-text hidden" id="plain-soc">Filters sideways chop (ER &lt; 0.25 forces ABSTAIN) & tracks confirmed breakouts.</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 5. Quantitative Indicators & Market Structure Matrix -->
+                <section class="card indicators-matrix-card">
+                    <div class="card-header">
+                        <div class="card-title-group">
+                            <span class="card-title">📐 Market Structure & Indicators</span>
+                            <span class="card-badge font-mono">Anti-Chop Engine</span>
+                        </div>
+                        <span class="card-sub font-mono">6 Orthogonal Metrics</span>
+                    </div>
+
+                    <div class="indicator-matrix-grid">
+                        <!-- 1. Kaufman ER20 -->
+                        <div class="indicator-tile">
+                            <div class="tile-top">
+                                <span class="tile-label">Kaufman Efficiency (ER20)</span>
+                                <span class="tile-badge badge-chop" id="tile-badge-er">CHOP (&lt; 0.25)</span>
+                            </div>
+                            <div class="tile-val font-mono" id="tile-val-er">ER: 0.0903</div>
+                            <div class="tile-footer font-mono" id="tile-foot-er">🛡️ Gate 1: Hard ABSTAIN Active</div>
+                        </div>
+
+                        <!-- 2. Break of Structure (BOS) -->
+                        <div class="indicator-tile">
+                            <div class="tile-top">
+                                <span class="tile-label">Market Structure (20-Bar BOS)</span>
+                                <span class="tile-badge badge-neutral" id="tile-badge-bos">INSIDE RANGE</span>
+                            </div>
+                            <div class="tile-val font-mono" id="tile-val-range">$80,329 – $83,642</div>
+                            <div class="tile-footer font-mono" id="tile-foot-bos">20-Candle Range Reference</div>
+                        </div>
+
+                        <!-- 3. Daily 1D Macro Trend -->
+                        <div class="indicator-tile">
+                            <div class="tile-top">
+                                <span class="tile-label">1D Daily Macro Trend</span>
+                                <span class="tile-badge badge-neutral" id="tile-badge-macro">NEUTRAL</span>
+                            </div>
+                            <div class="tile-val font-mono" id="tile-val-macro-ema">EMA20: $83.2k | EMA200: $75.0k</div>
+                            <div class="tile-footer font-mono" id="tile-foot-macro">Pullback / Range Consolidation</div>
+                        </div>
+
+                        <!-- 4. Triple EMA Stack (4H) -->
+                        <div class="indicator-tile">
+                            <div class="tile-top">
+                                <span class="tile-label">Triple EMA Stack (4H)</span>
+                                <span class="tile-badge badge-neutral" id="tile-badge-ema">MIXED</span>
+                            </div>
+                            <div class="tile-val font-mono" id="tile-val-ema-stack">20: $82.9k | 50: $83.5k | 200: $81.8k</div>
+                            <div class="tile-footer font-mono" id="tile-foot-ema">Position: Above 4H EMA200</div>
+                        </div>
+
+                        <!-- 5. Momentum RSI(14) -->
+                        <div class="indicator-tile">
+                            <div class="tile-top">
+                                <span class="tile-label">Momentum (RSI 14)</span>
+                                <span class="tile-badge badge-neutral" id="tile-badge-rsi">NEUTRAL LOW</span>
+                            </div>
+                            <div class="tile-val font-mono" id="tile-val-rsi">RSI: 44.8 (Falling)</div>
+                            <div class="tile-footer font-mono" id="tile-foot-rsi">Momentum: Subdued</div>
+                        </div>
+
+                        <!-- 6. Volume & Flow -->
+                        <div class="indicator-tile">
+                            <div class="tile-top">
+                                <span class="tile-label">Volume Z-Score & 24h CVD</span>
+                                <span class="tile-badge badge-neutral" id="tile-badge-vol">NORMAL VOL</span>
+                            </div>
+                            <div class="tile-val font-mono" id="tile-val-vol">Vol Z: -0.92σ | CVD: -33.8 BTC</div>
+                            <div class="tile-footer font-mono" id="tile-foot-vol">Baseline: 30d Excl. Current Bar</div>
                         </div>
                     </div>
                 </section>
@@ -322,7 +398,7 @@
         </footer>
     </div>
 
-    <script src="app/static/js/app.js"></script>
+    <script src="app/static/js/app.js?v=8.2.0"></script>
 </body>
 
 </html>

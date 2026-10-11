@@ -234,6 +234,12 @@ def test_daily_macro_trend_computation():
     macro_short = compute_macro_trend(short_1d)
     assert macro_short["macro_trend"] == "unknown"
 
+    # 4. Pullback / Consolidation regime (above EMA200 but below EMA20) -> neutral
+    pullback_1d = [{"close": 50000.0 + i * 100.0} for i in range(240)] + [{"close": 70000.0 - i * 500.0} for i in range(10)]
+    macro_pullback = compute_macro_trend(pullback_1d)
+    assert macro_pullback["macro_trend"] == "neutral"
+
+
 
 def test_kaufman_chop_gate_forces_abstain():
     """
