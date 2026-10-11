@@ -167,6 +167,8 @@ async def run_v8_evaluation(
             "last_candle_close_ts": snap.last_candle_close_ts.isoformat(),
             "freshness_market_s": snap.freshness_market_s,
             "freshness_funding_s": snap.freshness_funding_s,
+            "funding_rate_pct": market_raw.get("funding_rate_pct"),
+            "open_interest_usd": market_raw.get("open_interest_usd"),
             "is_fallback": snap.is_fallback,
             "is_synthetic": snap.is_synthetic
         },

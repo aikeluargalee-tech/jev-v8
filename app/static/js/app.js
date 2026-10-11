@@ -288,7 +288,23 @@ function renderRecord(rec) {
     // 1. Header & Freshness
     document.getElementById("freshness-text").textContent = `Freshness: ${market.freshness_market_s}s`;
     document.getElementById("market-price").textContent = `$${market.last_price.toLocaleString()}`;
-    document.getElementById("funding-rate").textContent = rec.categorical.derivatives_cat.funding_cat !== "unavailable" ? `${(rec.market.funding_rate_pct || 0).toFixed(4)}%` : "Unavailable";
+    const frHourly = market.funding_rate_pct !== undefined && market.funding_rate_pct !== null ? market.funding_rate_pct : null;
+    if (frHourly !== null) {
+        const fr8h = frHourly * 8;
+        const sign = fr8h >= 0 ? "+" : "";
+        document.getElementById("funding-rate").textContent = `${sign}${fr8h.toFixed(4)}% (8h)`;
+        document.getElementById("funding-rate").title = `Kraken 1h: ${frHourly.toFixed(6)}% | Annualized APR: ${(frHourly * 24 * 365).toFixed(2)}%`;
+    } else {
+        document.getElementById("funding-rate").textContent = "Unavailable";
+    }
+    if (document.getElementById("oi-val")) {
+        const oi = market.open_interest_usd !== undefined && market.open_interest_usd !== null ? market.open_interest_usd : null;
+        if (oi !== null && oi > 0) {
+            document.getElementById("oi-val").textContent = `$${(oi / 1e6).toFixed(1)}M`;
+        } else {
+            document.getElementById("oi-val").textContent = "--";
+        }
+    }
     document.getElementById("rsi-val").textContent = features.rsi14 ? `${features.rsi14} (${features.rsi_dir || 'flat'})` : "--";
     document.getElementById("atr-val").textContent = features.atr14 ? `$${features.atr14} (${features.atr_pct}%)` : "--";
     if (document.getElementById("er-val")) {
