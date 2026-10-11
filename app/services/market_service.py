@@ -143,15 +143,21 @@ class MarketService:
             try:
                 futures_pair = f"{sym}/USD:USD"
                 fr_info = await futures_exchange.fetch_funding_rate(futures_pair)
+                funding_received_ts = time.time()
                 raw_rate = fr_info.get("fundingRate")
                 if raw_rate is not None:
                     # Kraken Futures raw funding rate is 1-hour interval ('interval': '1h').
                     # Standardize to 8-hour rate (industry standard for perpetual funding percentage)
                     funding_rate_pct = float(raw_rate) * 8.0 * 100.0
 
+                # ccxt derives `timestamp` from Kraken Futures `info.lastTime` (last trade on the
+                # perpetual ticker) - a genuine exchange-side liveness timestamp for this feed.
+                # Age is measured at the moment the response is received. (Measuring against
+                # fetch_start_ts - captured before the spot/OHLCV calls - made the newer tick go
+                # negative and get clamped to a fake 0.0s.)
                 fr_ts = fr_info.get("timestamp")
                 if fr_ts:
-                    freshness_funding_s = max(0.0, fetch_start_ts - (fr_ts / 1000.0))
+                    freshness_funding_s = max(0.0, funding_received_ts - (fr_ts / 1000.0))
                 else:
                     # Fail-closed: missing exchange timestamp must be treated as stale, never 0.0s fresh
                     freshness_funding_s = 999999.0

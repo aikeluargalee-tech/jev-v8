@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
@@ -43,19 +43,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount Static Files and Templates
+# Mount Static Files
+# Single source of truth: the repository-root index.html (also served by GitHub Pages)
+# is served directly, eliminating the drift-prone duplicate under app/templates.
 static_dir = BASE_DIR / "static"
-templates_dir = BASE_DIR / "templates"
 data_dir = BASE_DIR.parent / "data"
+INDEX_HTML_PATH = BASE_DIR.parent / "index.html"
 
 static_dir.mkdir(parents=True, exist_ok=True)
-templates_dir.mkdir(parents=True, exist_ok=True)
 data_dir.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 app.mount("/app/static", StaticFiles(directory=str(static_dir)), name="app_static")
 app.mount("/data", StaticFiles(directory=str(data_dir)), name="data")
-templates = Jinja2Templates(directory=str(templates_dir))
 
 # Include API Router
 app.include_router(api_router, prefix="/api")
@@ -63,13 +63,7 @@ app.include_router(api_router, prefix="/api")
 
 @app.get("/", summary="Main Terminal UI")
 async def root(request: Request):
-    return templates.TemplateResponse(
-        request=request,
-        name="index.html",
-        context={
-            "app_name": settings.APP_NAME
-        }
-    )
+    return FileResponse(str(INDEX_HTML_PATH), media_type="text/html")
 
 
 @app.get("/health", summary="Health check")

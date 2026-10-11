@@ -96,10 +96,13 @@ def volume_zscore(volumes: List[float], baseline_count: int = 180) -> Optional[f
     baseline = volumes[-(effective_count + 1):-1]
     mean = sum(baseline) / len(baseline)
     var = sum((v - mean) ** 2 for v in baseline) / len(baseline)
-    std = math.sqrt(var) if var > 0.0 else 1.0
+    if var == 0.0:
+        # Constant baseline: 0.0 if current equals mean, else +/- 3.0 max spike indicator
+        if current_vol == mean:
+            return 0.0
+        return 3.0 if current_vol > mean else -3.0
 
-    if std == 0.0 or var == 0.0:
-        return 0.0 if current_vol == mean else round((current_vol - mean) / 1.0, 2)
+    std = math.sqrt(var)
     return round((current_vol - mean) / std, 2)
 
 
@@ -326,7 +329,7 @@ def compute_features(candles: List[Dict[str, Any]], profile: str = "SWING") -> D
     # Break of Structure (BOS) over 20-candle range
     bos_info = check_break_of_structure(candles, lookback=20, atr14=atr14_val)
 
-    # Recent swing high/low over completed lookback candles (strictly excluding current candle to prevent self-reference)
+    # Recent swing high/low over prior completed lookback candles (excluding candles[-1] to prevent self-reference, mirroring BOS logic)
     if len(candles) >= 2:
         lookback = min(20, len(candles) - 1)
         ref_candles = candles[-(lookback + 1):-1]

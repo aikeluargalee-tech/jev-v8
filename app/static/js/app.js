@@ -387,7 +387,7 @@ function renderRecord(rec) {
 
     // Confidence
     document.getElementById("confidence-band").textContent = det.final_confidence_band || "--";
-    document.getElementById("confidence-raw").innerHTML = det.final_confidence_raw !== null ? `Raw: ${det.final_confidence_raw} <span class="uncalibrated-pill">(uncalibrated)</span>` : "--";
+    document.getElementById("confidence-raw").innerHTML = (typeof det.final_confidence_raw === "number" && Number.isFinite(det.final_confidence_raw)) ? `Raw: ${det.final_confidence_raw} <span class="uncalibrated-pill">(uncalibrated)</span>` : "--";
     document.getElementById("verdict-timestamp").textContent = rec.ts_local_myt;
 
     // Conflict Surfacing
@@ -854,7 +854,7 @@ function configureCloudToken() {
     const existing = getCloudToken();
     const promptMsg = existing
         ? "🔑 Current GitHub Token is configured for this session.\n\nPaste a new token to update, or clear the text and click OK to remove it:"
-        : "🔑 Configure 1-Click Cloud Token:\n\nPaste your GitHub Personal Access Token (classic with 'repo' scope or OAuth token).\nSecurity note: For protection, the token is kept in memory/sessionStorage only and is purged when you close this browser tab:";
+        : "🔑 Configure 1-Click Cloud Token:\n\nPaste your GitHub Personal Access Token (recommended: fine-grained PAT with 'Actions: write' on this repo only).\nSecurity note: For protection, the token is stored strictly in sessionStorage and is purged when you close this browser tab:";
 
     const val = window.prompt(promptMsg, "");
     if (val === null) return;

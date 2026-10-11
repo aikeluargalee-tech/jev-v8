@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from pathlib import Path
 from typing import Dict, Any, List, Optional
@@ -7,9 +8,18 @@ import datetime
 DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent.parent / "verdicts.db"
 
 
+def resolve_db_path() -> Path:
+    """
+    Resolves the verdicts DB path. JEV_VERDICTS_DB_PATH overrides the default so that
+    test suites and sandbox runs are hermetic and never mutate the committed verdicts.db.
+    """
+    override = os.environ.get("JEV_VERDICTS_DB_PATH")
+    return Path(override) if override else DEFAULT_DB_PATH
+
+
 class VerdictsDatabase:
     def __init__(self, db_path: Optional[Path] = None):
-        self.db_path = db_path or DEFAULT_DB_PATH
+        self.db_path = Path(db_path) if db_path else resolve_db_path()
         self.init_db()
 
     def _get_connection(self) -> sqlite3.Connection:

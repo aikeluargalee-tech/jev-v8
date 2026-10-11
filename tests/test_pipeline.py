@@ -67,9 +67,34 @@ async def test_security_settings_endpoint_deleted():
         assert res.status_code == 404
 
 
-def test_ac10_calibration_dataset_accumulated():
-    """Verify AC-10 calibration gate readiness from verdicts.db."""
+def _seed_verdicts(n: int) -> None:
+    import datetime
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    for i in range(n):
+        verdicts_db.log_verdict({
+            "run_id": f"seed_{i}", "ts_utc": now_iso, "profile": "SWING", "rule_ver": "v8.0",
+            "shadow_mode": True, "market": {"venue": "kraken", "pair": "BTC/USD", "last_price": 82000.0},
+            "deterministic": {"final_verdict": "ABSTAIN", "final_confidence_band": "Low",
+                              "final_confidence_raw": 0.45, "data_gates_passed": True},
+            "cost": {"total_cost_usd": 0.0}
+        }, f"seed_hash_{i}")
+
+
+def test_ac10_calibration_dataset_threshold_boundary():
+    """AC-10 dataset readiness flips exactly at SHADOW_MODE_MIN_VERDICTS (hermetic, self-seeded)."""
+    from app.core.config import settings
+    threshold = settings.SHADOW_MODE_MIN_VERDICTS
+
+    assert evaluate_calibration_dataset()["total_recorded_verdicts"] == 0  # isolated DB starts empty
+
+    _seed_verdicts(threshold - 1)
     calib = evaluate_calibration_dataset()
-    assert calib["total_recorded_verdicts"] >= 60
+    assert calib["total_recorded_verdicts"] == threshold - 1
+    assert calib["calibration_dataset_ready"] is False
+    assert calib["ac10_gate_status"] == "COLLECTING_OUTCOMES"
+
+    _seed_verdicts(threshold)  # run_ids overlap via INSERT OR REPLACE -> total == threshold
+    calib = evaluate_calibration_dataset()
+    assert calib["total_recorded_verdicts"] == threshold
     assert calib["calibration_dataset_ready"] is True
     assert calib["ac10_gate_status"] == "READY_FOR_PHASE_2_CALIBRATION"

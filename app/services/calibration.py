@@ -226,7 +226,9 @@ def compute_empirical_calibration() -> Dict[str, Any]:
             pred = float(o.get("final_confidence_raw") or empirical_probs[band])
             brier_terms.append((pred - actual) ** 2)
 
-    brier_score = round(sum(brier_terms) / len(brier_terms), 4) if brier_terms else 0.0
+    # Fail-closed: with zero scorable records, Brier is undefined (None), never a misleading "perfect" 0.0
+    brier_score = round(sum(brier_terms) / len(brier_terms), 4) if brier_terms else None
+    brier_text = f"{brier_score:.4f}" if brier_score is not None else "N/A (no scorable WIN/LOSS records)"
 
     return {
         "is_calibrated": True,
@@ -234,11 +236,12 @@ def compute_empirical_calibration() -> Dict[str, Any]:
         "total_verified_outcomes": total_outcomes,
         "required_for_calibration": min_cal_outcomes,
         "brier_score": brier_score,
+        "brier_sample_size": len(brier_terms),
         "empirical_probabilities": empirical_probs,
         "display_label": "locally-calibrated",
         "message": (
             f"Successfully calibrated on {total_outcomes} forward outcomes. "
-            f"Brier score: {brier_score:.4f}. Empirical probabilities active."
+            f"Brier score: {brier_text}. Empirical probabilities active."
         )
     }
 

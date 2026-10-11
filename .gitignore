@@ -26,6 +26,9 @@ myenv/
 *.sqlite
 *.sqlite3
 !verdicts.db
+verdicts.db-wal
+verdicts.db-shm
+*.db-journal
 !data/
 app/data/
 

@@ -28,19 +28,22 @@ def test_frontend_bundle_has_no_secrets():
         ROOT_DIR / "app" / "templates"
     ]
 
-    violations = []
+    candidate_files = [ROOT_DIR / "index.html"]  # single-source UI page (served locally and on GitHub Pages)
     for fdir in frontend_paths:
         if not fdir.exists():
             continue
         for root, _, files in os.walk(fdir):
             for file in files:
                 if file.endswith((".js", ".html", ".css")):
-                    file_path = Path(root) / file
-                    content = file_path.read_text(encoding="utf-8", errors="ignore")
-                    for pat in forbidden_patterns:
-                        matches = pat.findall(content)
-                        if matches:
-                            violations.append(f"{file_path.name}: matched forbidden pattern '{pat.pattern}' -> {matches}")
+                    candidate_files.append(Path(root) / file)
+
+    violations = []
+    for file_path in candidate_files:
+        content = file_path.read_text(encoding="utf-8", errors="ignore")
+        for pat in forbidden_patterns:
+            matches = pat.findall(content)
+            if matches:
+                violations.append(f"{file_path.name}: matched forbidden pattern '{pat.pattern}' -> {matches}")
 
     assert len(violations) == 0, f"Found secrets/credentials in frontend bundle: {violations}"
 
