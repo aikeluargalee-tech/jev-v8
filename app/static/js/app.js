@@ -10,6 +10,12 @@ document.addEventListener("DOMContentLoaded", () => {
 
 async function initApp() {
     setupEventListeners();
+
+    if (localStorage.getItem("jev_plain_english") === "true") {
+        plainEnglishEnabled = true;
+    }
+    updatePlainEnglishUI();
+
     await fetchSystemStatus();
     // Run initial evaluation on startup
     await runEvaluation();
@@ -48,11 +54,8 @@ function setupEventListeners() {
     // 2. Plain English toggle
     togglePlainBtn.addEventListener("click", () => {
         plainEnglishEnabled = !plainEnglishEnabled;
-        document.getElementById("plain-english-state").textContent = plainEnglishEnabled ? "ON" : "OFF";
-        document.querySelectorAll(".plain-english-text").forEach(el => {
-            if (plainEnglishEnabled) el.classList.remove("hidden");
-            else el.classList.add("hidden");
-        });
+        localStorage.setItem("jev_plain_english", plainEnglishEnabled ? "true" : "false");
+        updatePlainEnglishUI();
     });
 
     // 3. Refresh Data Button
@@ -365,6 +368,21 @@ function renderRecord(rec) {
         badgeIcon.textContent = "⚪";
     }
 
+    // Sub-verdict pill for Plain English mode
+    const subVerdict = document.getElementById("verdict-sub-plain");
+    if (subVerdict) {
+        if (plainEnglishEnabled) {
+            subVerdict.classList.remove("hidden");
+            if (verdict === "ABSTAIN") subVerdict.textContent = "Preserve Cash • No Edge";
+            else if (verdict === "BUY") subVerdict.textContent = "Bullish Setup • Enter Zone";
+            else if (verdict === "SELL") subVerdict.textContent = "Bearish Breakdown • Protect";
+            else if (verdict === "HOLD") subVerdict.textContent = "Maintain Position";
+            else subVerdict.textContent = "";
+        } else {
+            subVerdict.classList.add("hidden");
+        }
+    }
+
     // Confidence
     document.getElementById("confidence-band").textContent = det.final_confidence_band || "--";
     document.getElementById("confidence-raw").innerHTML = det.final_confidence_raw !== null ? `Raw: ${det.final_confidence_raw} <span class="uncalibrated-pill">(uncalibrated)</span>` : "--";
@@ -380,8 +398,8 @@ function renderRecord(rec) {
         conflictBanner.classList.add("hidden");
     }
 
-    // Reasons Box
-    document.getElementById("reasons-box").textContent = det.reasons.join(" • ");
+    // Reasons Box & Explanations (Dual Quant / Plain English)
+    renderReasonsAndExplanations(rec);
 
     // 4. Pillars (Element 5)
     renderPillar("tech", det.pillars.technicals, `EMA Stack: ${rec.categorical.market_cat.ema_stack} | Pos: ${rec.categorical.market_cat.ema200_pos}`);
@@ -545,6 +563,139 @@ function renderRecord(rec) {
     const outcomeInput = document.getElementById("outcome-run-id");
     if (outcomeInput) outcomeInput.value = rec.run_id;
     fetchCalibrationReport();
+}
+
+function updatePlainEnglishUI() {
+    const togglePlainBtn = document.getElementById("btn-toggle-plain");
+    if (togglePlainBtn) {
+        if (plainEnglishEnabled) {
+            togglePlainBtn.classList.add("active");
+            togglePlainBtn.innerHTML = `💡 Plain English: <strong id="plain-english-state">ON</strong>`;
+        } else {
+            togglePlainBtn.classList.remove("active");
+            togglePlainBtn.innerHTML = `ℹ️ Plain English: <strong id="plain-english-state">OFF</strong>`;
+        }
+    }
+
+    document.querySelectorAll(".plain-english-text").forEach(el => {
+        if (plainEnglishEnabled) el.classList.remove("hidden");
+        else el.classList.add("hidden");
+    });
+
+    if (latestRecord) {
+        renderReasonsAndExplanations(latestRecord);
+        const subVerdict = document.getElementById("verdict-sub-plain");
+        if (subVerdict) {
+            const verdict = latestRecord.deterministic ? latestRecord.deterministic.final_verdict : "";
+            if (plainEnglishEnabled) {
+                subVerdict.classList.remove("hidden");
+                if (verdict === "ABSTAIN") subVerdict.textContent = "Preserve Cash • No Edge";
+                else if (verdict === "BUY") subVerdict.textContent = "Bullish Setup • Enter Zone";
+                else if (verdict === "SELL") subVerdict.textContent = "Bearish Breakdown • Protect";
+                else if (verdict === "HOLD") subVerdict.textContent = "Maintain Position";
+                else subVerdict.textContent = "";
+            } else {
+                subVerdict.classList.add("hidden");
+            }
+        }
+    }
+}
+
+function renderReasonsAndExplanations(rec) {
+    const reasonsBox = document.getElementById("reasons-box");
+    if (!reasonsBox) return;
+
+    const det = rec.deterministic || {};
+    const features = rec.features || {};
+    const market = rec.market || {};
+    const verdict = det.final_verdict || "ABSTAIN";
+
+    if (!plainEnglishEnabled) {
+        // Quantitative Mode
+        reasonsBox.classList.remove("reasons-plain");
+        const quantReasons = det.reasons && det.reasons.length > 0
+            ? det.reasons.join(" • ")
+            : "No active quantitative reasons reported.";
+        reasonsBox.innerHTML = `<strong>Quantitative Signals:</strong> ${quantReasons}`;
+        return;
+    }
+
+    // Plain English Mode
+    reasonsBox.classList.add("reasons-plain");
+
+    let headline = "";
+    let actionItem = "";
+    let chopText = "";
+    let macroText = "";
+    let derivText = "";
+
+    // 1. Headline & Action Recommendation
+    if (verdict === "ABSTAIN") {
+        if (features.er20 !== undefined && features.er20 < 0.25) {
+            headline = "✋ <strong>Capital Preservation Mode: Market Trapped in Low-Efficiency Chop</strong>";
+            actionItem = `<strong>Trader Action:</strong> <strong>Sit on your hands.</strong> Entering swing trades in a low-efficiency chop regime exposes you to whipsaws and false breakouts. Stay 100% in cash until price breaks out with volume.`;
+        } else if (features.macro_trend === "neutral") {
+            headline = "✋ <strong>Capital Preservation Mode: Macro Trend Consolidation / Pullback</strong>";
+            actionItem = `<strong>Trader Action:</strong> <strong>Wait for alignment.</strong> The broader daily trend is pausing. Await clean confluence across momentum and higher timeframes before deploying capital.`;
+        } else {
+            headline = "✋ <strong>Capital Preservation Mode: Insufficient Edge to Trade</strong>";
+            actionItem = `<strong>Trader Action:</strong> <strong>Preserve capital.</strong> Confluence requirements not met. We only enter when math favors the trade.`;
+        }
+    } else if (verdict === "BUY") {
+        headline = "🚀 <strong>Bullish Opportunity: High Confluence Trend Alignment</strong>";
+        actionItem = `<strong>Trader Action:</strong> <strong>Execute Buy within entry zone.</strong> Momentum, trend structure, and derivatives all confirm upward continuation. Maintain strict stop-loss discipline.`;
+    } else if (verdict === "SELL") {
+        headline = "⚠️ <strong>Bearish Warning: Structural Breakdown Detected</strong>";
+        actionItem = `<strong>Trader Action:</strong> <strong>Exit long positions / Protect profits.</strong> Trend broken below critical support levels.`;
+    } else {
+        headline = "⏱️ <strong>Hold Current Position</strong>";
+        actionItem = `<strong>Trader Action:</strong> Maintain existing trade structure. No invalidation trigger hit.`;
+    }
+
+    // 2. Chop & Efficiency
+    if (features.er20 !== undefined && features.er20 !== null) {
+        const effPct = Math.round(features.er20 * 100);
+        const noisePct = 100 - effPct;
+        const low = features.range_low ? `$${Math.round(features.range_low).toLocaleString()}` : "$--";
+        const high = features.range_high ? `$${Math.round(features.range_high).toLocaleString()}` : "$--";
+        if (features.er20 < 0.25) {
+            chopText = `<li><strong>Sideways Noise (Chop):</strong> Only <strong>${effPct}%</strong> of recent price movement made directional progress; <strong>${noisePct}% was back-and-forth noise</strong>. Price is stuck in a box between <strong>${low}</strong> and <strong>${high}</strong>. (Gate 1 Auto-Veto active).</li>`;
+        } else {
+            chopText = `<li><strong>Trend Efficiency:</strong> Clean directional displacement (${effPct}% efficiency). Price is progressing smoothly with minimal noise.</li>`;
+        }
+    }
+
+    // 3. 1D Macro Trend
+    if (features.macro_trend) {
+        const e20 = features.ema20_1d ? `$${(features.ema20_1d / 1000).toFixed(1)}k` : "";
+        if (features.macro_trend === "neutral") {
+            macroText = `<li><strong>1-Day Macro Trend (Neutral Pullback):</strong> Bitcoin is trading below its 20-day moving average (${e20}). The macro bull market is taking a breather in consolidation.</li>`;
+        } else if (features.macro_trend === "bullish") {
+            macroText = `<li><strong>1-Day Macro Trend (Bullish Expansion):</strong> Price is cleanly above its 20, 50, and 200-day moving averages. Higher timeframe momentum is strongly upwards.</li>`;
+        } else {
+            macroText = `<li><strong>1-Day Macro Trend (Bearish Downtrend):</strong> Price is below long-term moving averages. Higher timeframes favor sellers.</li>`;
+        }
+    }
+
+    // 4. Futures & Derivatives
+    const frHourly = market.funding_rate_pct !== undefined && market.funding_rate_pct !== null ? market.funding_rate_pct : null;
+    const oi = market.open_interest_usd ? `$${(market.open_interest_usd / 1e6).toFixed(1)}M` : "";
+    if (frHourly !== null) {
+        const fr8h = (frHourly * 8).toFixed(4);
+        derivText = `<li><strong>Futures & Derivatives:</strong> Funding rate is near zero (<strong>+${fr8h}% 8h</strong>) with <strong>${oi}</strong> open interest. Perpetual traders are balanced—no short-squeeze or long-liquidation panic.</li>`;
+    }
+
+    reasonsBox.innerHTML = `
+        <div class="plain-english-card">
+            <div class="plain-headline">${headline}</div>
+            <ul class="plain-list">
+                ${chopText}
+                ${macroText}
+                ${derivText}
+                <li class="plain-action">${actionItem}</li>
+            </ul>
+        </div>
+    `;
 }
 
 function applyCalibrationReportData(report) {

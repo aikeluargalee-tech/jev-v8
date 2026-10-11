@@ -151,6 +151,20 @@ body {
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-size: 15px;
+    transition: all 0.2s ease;
+}
+
+.plain-english-toggle:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+
+.plain-english-toggle.active {
+    background: rgba(16, 185, 129, 0.2) !important;
+    border-color: #10b981 !important;
+    color: #34d399 !important;
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.4) !important;
+    font-weight: 700;
 }
 
 .run-btn {
@@ -394,6 +408,57 @@ body {
     font-size: 15px;
     color: var(--text-secondary);
     border-left: 3px solid var(--accent-cyan);
+    transition: all 0.2s ease;
+}
+
+.reasons-box.reasons-plain {
+    background: rgba(16, 185, 129, 0.06);
+    border-left: 4px solid #10b981;
+    color: var(--text-primary);
+    padding: 18px 22px;
+}
+
+.plain-headline {
+    font-size: 16px;
+    font-weight: 700;
+    color: #34d399;
+    margin-bottom: 12px;
+}
+
+.plain-list {
+    margin: 0;
+    padding-left: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    font-size: 14px;
+    line-height: 1.55;
+    color: #d1d5db;
+}
+
+.plain-list li strong {
+    color: #ffffff;
+}
+
+.plain-action {
+    margin-top: 8px;
+    padding: 10px 14px;
+    background: rgba(245, 158, 11, 0.1);
+    border-radius: var(--radius-sm);
+    border-left: 3px solid #fbbf24;
+    list-style: none;
+    margin-left: -20px;
+    color: #fde68a !important;
+    font-size: 14px;
+}
+
+.verdict-sub-plain {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    opacity: 0.9;
+    margin-top: 4px;
 }
 
 /* Pillars Card */
