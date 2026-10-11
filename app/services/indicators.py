@@ -82,20 +82,116 @@ def atr(high: List[float], low: List[float], close: List[float], period: int = 1
 
 def volume_zscore(volumes: List[float], baseline_count: int = 180) -> Optional[float]:
     """
-    Calculates Volume Z-score vs 30-day baseline.
+    Calculates Volume Z-score vs 30-day baseline, strictly excluding the scored candle.
     For 4h candles: 30 days = 30 * 6 = 180 candles.
     """
-    if len(volumes) < baseline_count or baseline_count < 2:
+    if len(volumes) < 2 or baseline_count < 2:
         return None
 
-    baseline = volumes[-baseline_count:]
+    current_vol = volumes[-1]
+    effective_count = min(baseline_count, len(volumes) - 1)
+    if effective_count < 2:
+        return 0.0
+
+    baseline = volumes[-(effective_count + 1):-1]
     mean = sum(baseline) / len(baseline)
     var = sum((v - mean) ** 2 for v in baseline) / len(baseline)
     std = math.sqrt(var) if var > 0.0 else 1.0
 
-    if std == 0.0:
+    if std == 0.0 or var == 0.0:
+        return 0.0 if current_vol == mean else round((current_vol - mean) / 1.0, 2)
+    return round((current_vol - mean) / std, 2)
+
+
+def efficiency_ratio(closes: List[float], period: int = 20) -> Optional[float]:
+    """
+    Kaufman Efficiency Ratio (ER) over N candles.
+    ER = |Close_t - Close_{t-N}| / sum_{i=0..N-1} |Close_{t-i} - Close_{t-i-1}|
+    Measures path efficiency (directional persistence vs choppy noise):
+      - Approaches 1.0 during clean trending expansion
+      - Approaches 0.0 during sideways choppy oscillation
+    Returns float rounded to 4 decimals, or None if insufficient candles.
+    """
+    if len(closes) < period + 1 or period < 1:
+        return None
+
+    net_change = abs(closes[-1] - closes[-(period + 1)])
+    total_path = sum(abs(closes[i] - closes[i - 1]) for i in range(len(closes) - period, len(closes)))
+
+    if total_path == 0.0:
         return 0.0
-    return round((volumes[-1] - mean) / std, 2)
+
+    return round(net_change / total_path, 4)
+
+
+def check_break_of_structure(
+    candles: List[Dict[str, Any]],
+    lookback: int = 20,
+    atr14: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Close-confirmed Break of Structure (BOS) over recent range extremes.
+    Strictly excludes current candle from range reference to prevent lookahead self-comparison.
+    """
+    if len(candles) < lookback + 1:
+        return {"bos": "NO_BREAK", "range_high": 0.0, "range_low": 0.0}
+
+    ref_candles = candles[-(lookback + 1):-1]
+    curr_close = candles[-1]["close"]
+    range_high = max(c["high"] for c in ref_candles)
+    range_low = min(c["low"] for c in ref_candles)
+
+    buffer = (0.1 * atr14) if atr14 else 0.0
+
+    if curr_close > (range_high + buffer):
+        bos = "BOS_BULLISH"
+    elif curr_close < (range_low - buffer):
+        bos = "BOS_BEARISH"
+    else:
+        bos = "INSIDE_RANGE"
+
+    return {
+        "bos": bos,
+        "range_high": round(range_high, 2),
+        "range_low": round(range_low, 2)
+    }
+
+
+def compute_macro_trend(candles_1d: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Computes Daily Macro Trend from 1D closed candles.
+    Evaluates 1D EMA50, EMA200, and last daily close.
+    Returns dict with macro_trend ("bullish" | "bearish" | "neutral" | "unknown"), ema50_1d, ema200_1d.
+    """
+    if not candles_1d or len(candles_1d) < 50:
+        return {"macro_trend": "unknown", "ema50_1d": None, "ema200_1d": None, "last_close_1d": None}
+
+    closes_1d = [c["close"] for c in candles_1d]
+    ema50_series = ema(closes_1d, 50)
+    ema200_series = ema(closes_1d, 200)
+
+    ema50_val = ema50_series[-1] if ema50_series else None
+    ema200_val = ema200_series[-1] if ema200_series else None
+    last_close = closes_1d[-1]
+
+    if ema200_val is not None:
+        if last_close > ema200_val and (ema50_val is None or ema50_val >= ema200_val):
+            macro_trend = "bullish"
+        elif last_close < ema200_val and (ema50_val is None or ema50_val <= ema200_val):
+            macro_trend = "bearish"
+        else:
+            macro_trend = "neutral"
+    elif ema50_val is not None:
+        macro_trend = "bullish" if last_close > ema50_val else "bearish"
+    else:
+        macro_trend = "unknown"
+
+    return {
+        "macro_trend": macro_trend,
+        "ema50_1d": round(ema50_val, 2) if ema50_val else None,
+        "ema200_1d": round(ema200_val, 2) if ema200_val else None,
+        "last_close_1d": round(last_close, 2)
+    }
 
 
 def cvd_24h(candles: List[Dict[str, Any]], hours: int = 24) -> Tuple[Optional[float], str]:
@@ -148,7 +244,9 @@ def compute_features(candles: List[Dict[str, Any]], profile: str = "SWING") -> D
             "rsi14": None, "rsi_dir": "unknown",
             "atr14": None, "atr_pct": None,
             "vol_z": None, "cvd_24h": None, "cvd_trend": "unknown",
-            "swing_high": 0.0, "swing_low": 0.0
+            "swing_high": 0.0, "swing_low": 0.0,
+            "er20": None, "er_regime": "unknown",
+            "bos": "NO_BREAK", "range_high": 0.0, "range_low": 0.0
         }
 
     closes = [c["close"] for c in candles]
@@ -197,6 +295,20 @@ def compute_features(candles: List[Dict[str, Any]], profile: str = "SWING") -> D
     window_24h = 6 if profile == "SWING" else 24
     cvd_val, cvd_trend = cvd_24h(candles, hours=window_24h)
 
+    # Kaufman Efficiency Ratio (ER20)
+    er20_val = efficiency_ratio(closes, period=20)
+    if er20_val is None:
+        er_regime = "unknown"
+    elif er20_val < 0.25:
+        er_regime = "chop"
+    elif er20_val > 0.50:
+        er_regime = "trending"
+    else:
+        er_regime = "transitional"
+
+    # Break of Structure (BOS) over 20-candle range
+    bos_info = check_break_of_structure(candles, lookback=20, atr14=atr14_val)
+
     # Recent swing high/low over last 20 candles
     recent_window = min(20, len(candles))
     swing_high = max(highs[-recent_window:]) if recent_window > 0 else closes[-1]
@@ -214,7 +326,12 @@ def compute_features(candles: List[Dict[str, Any]], profile: str = "SWING") -> D
         "cvd_24h": cvd_val,
         "cvd_trend": cvd_trend,
         "swing_high": swing_high,
-        "swing_low": swing_low
+        "swing_low": swing_low,
+        "er20": er20_val,
+        "er_regime": er_regime,
+        "bos": bos_info["bos"],
+        "range_high": bos_info["range_high"],
+        "range_low": bos_info["range_low"]
     }
 
 
@@ -299,7 +416,10 @@ def compute_compact_state(
             "rsi_dir": rsi_dir,
             "vol_regime": vol_regime,
             "vol_z": float(vol_z),
-            "cvd_trend": cvd_trend
+            "cvd_trend": cvd_trend,
+            "er20": features.get("er20"),
+            "er_regime": features.get("er_regime", "unknown"),
+            "bos": features.get("bos", "NO_BREAK")
         },
         "derivatives_cat": {
             "funding_cat": funding_cat,
@@ -311,7 +431,7 @@ def compute_compact_state(
 
 def compute_pillars(market_cat: Dict[str, Any], derivatives_cat: Dict[str, Any], social_meta: Dict[str, Any]) -> Dict[str, str]:
     """
-    Evaluates 3 pillars: technicals, derivatives, social.
+    Evaluates pillars: technicals, derivatives, social, and efficiency (structure & ER20).
     Each returns: 'bullish' | 'bearish' | 'neutral' | 'weak' | 'unavailable'.
     """
     # Technicals pillar
@@ -348,16 +468,39 @@ def compute_pillars(market_cat: Dict[str, Any], derivatives_cat: Dict[str, Any],
     else:
         soc = "unavailable"
 
-    return {"technicals": tech, "derivatives": deriv, "social": soc}
+    # Efficiency & Structure pillar
+    er_reg = market_cat.get("er_regime")
+    bos_stat = market_cat.get("bos")
+    if bos_stat == "BOS_BULLISH" and er_reg in ["trending", "transitional"]:
+        eff = "bullish"
+    elif bos_stat == "BOS_BEARISH" and er_reg in ["trending", "transitional"]:
+        eff = "bearish"
+    elif er_reg == "chop":
+        eff = "neutral"
+    else:
+        eff = "neutral"
+
+    return {"technicals": tech, "derivatives": deriv, "social": soc, "efficiency": eff}
 
 
-def resolve_final_verdict(pillars: Dict[str, str], data_gates_passed: bool, shadow_mode: bool = True) -> Tuple[str, List[str]]:
+def resolve_final_verdict(
+    pillars: Dict[str, str],
+    data_gates_passed: bool,
+    shadow_mode: bool = True,
+    er20: Optional[float] = None,
+    macro_trend: Optional[str] = None
+) -> Tuple[str, List[str]]:
     """
-    Deterministic final verdict resolver.
+    Deterministic final verdict resolver with hard chop gate and macro alignment veto.
     Default stance: ABSTAIN on conflict, unless 2 strongly agree and 3rd is neutral/weak.
     """
     if not data_gates_passed:
         return "NO_VERDICT", ["Data gates failed"]
+
+    # Gate 1: Kaufman Efficiency Ratio (ER20) Hard Chop Gate
+    # When ER20 < 0.25, price path is pure noise/chop. Force ABSTAIN to prevent whipsaw.
+    if er20 is not None and er20 < 0.25:
+        return "ABSTAIN", [f"Kaufman ER20 ({er20:.4f} < 0.25): Consolidation/chop regime detected. Hard chop gate forces ABSTAIN."]
 
     conflicts = []
     vals = [pillars["technicals"], pillars["derivatives"], pillars["social"]]
@@ -369,16 +512,25 @@ def resolve_final_verdict(pillars: Dict[str, str], data_gates_passed: bool, shad
     bull = sum(1 for v in effective if v == "bullish")
     bear = sum(1 for v in effective if v == "bearish")
 
+    raw_verdict = "ABSTAIN"
     if bull >= 2 and bear == 0:
-        return "BUY", []
-    if bear >= 2 and bull == 0:
-        return "SELL", []
-    if bull > 0 and bear > 0:
+        raw_verdict = "BUY"
+    elif bear >= 2 and bull == 0:
+        raw_verdict = "SELL"
+    elif bull > 0 and bear > 0:
         conflicts.append(f"Conflicts detected: Technicals {pillars['technicals']} vs Derivatives {pillars['derivatives']} vs Social {pillars['social']}")
         return "ABSTAIN", conflicts
+    else:
+        return "ABSTAIN", ["Low confluence across pillars"]
 
-    # Low confluence
-    return "ABSTAIN", ["Low confluence across pillars"]
+    # Gate 2: Daily 1D Macro Trend Alignment Gate
+    # Swing trades on 4H must never run counter to the daily macro trend (1D EMA50/200).
+    if raw_verdict == "BUY" and macro_trend == "bearish":
+        return "ABSTAIN", ["Daily Macro Trend (1D EMA50/200) is bearish: Counter-trend 4H BUY vetoed."]
+    if raw_verdict == "SELL" and macro_trend == "bullish":
+        return "ABSTAIN", ["Daily Macro Trend (1D EMA50/200) is bullish: Counter-trend 4H SELL vetoed."]
+
+    return raw_verdict, []
 
 
 def compute_levels(

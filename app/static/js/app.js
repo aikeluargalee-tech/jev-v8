@@ -291,6 +291,15 @@ function renderRecord(rec) {
     document.getElementById("funding-rate").textContent = rec.categorical.derivatives_cat.funding_cat !== "unavailable" ? `${(rec.market.funding_rate_pct || 0).toFixed(4)}%` : "Unavailable";
     document.getElementById("rsi-val").textContent = features.rsi14 ? `${features.rsi14} (${features.rsi_dir})` : "--";
     document.getElementById("atr-val").textContent = features.atr14 ? `$${features.atr14} (${features.atr_pct}%)` : "--";
+    if (document.getElementById("er-val")) {
+        const er = features.er20 !== undefined && features.er20 !== null ? features.er20.toFixed(3) : "--";
+        const reg = features.er_regime ? ` (${features.er_regime})` : "";
+        document.getElementById("er-val").textContent = `${er}${reg}`;
+    }
+    if (document.getElementById("macro-val")) {
+        const mac = features.macro_trend ? features.macro_trend.toUpperCase() : "--";
+        document.getElementById("macro-val").textContent = mac;
+    }
 
     // 2. Banners & Fail-Closed Alerts
     const alertBanner = document.getElementById("system-alert-banner");
@@ -361,7 +370,13 @@ function renderRecord(rec) {
     // 4. Pillars (Element 5)
     renderPillar("tech", det.pillars.technicals, `EMA Stack: ${rec.categorical.market_cat.ema_stack} | Pos: ${rec.categorical.market_cat.ema200_pos}`);
     renderPillar("deriv", det.pillars.derivatives, `Funding Cat: ${rec.categorical.derivatives_cat.funding_cat}`);
-    renderPillar("soc", det.pillars.social, `Polarity: ${rec.categorical.social_meta.polarity_cat}`);
+    
+    // Pillar 3: Efficiency & Structure
+    const effState = det.pillars.efficiency || det.pillars.social;
+    const erText = features.er20 !== undefined && features.er20 !== null ? features.er20.toFixed(3) : "--";
+    const erRegime = features.er_regime || "unknown";
+    const bosText = features.bos || "NO_BREAK";
+    renderPillar("soc", effState, `ER20: ${erText} (${erRegime}) | ${bosText}`);
 
     // 5. Decision Levels (Element 6)
     const shadowBox = document.getElementById("shadow-locked-box");

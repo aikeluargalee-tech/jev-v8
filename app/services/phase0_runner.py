@@ -19,7 +19,8 @@ from app.services.indicators import (
     compute_compact_state,
     compute_pillars,
     resolve_final_verdict,
-    compute_levels
+    compute_levels,
+    compute_macro_trend
 )
 
 
@@ -105,9 +106,19 @@ async def run_v8_evaluation(
         data_gates_passed = False
         fail_reasons.append(jev_reason)
 
+    # 8.5 Compute Daily Macro Trend
+    candles_1d = market_raw.get("candles_1d") or []
+    macro_info = compute_macro_trend(candles_1d)
+
     # 9. Compute Pillars & Conflict Surfacing
     pillars = compute_pillars(compact_state["market_cat"], compact_state["derivatives_cat"], compact_state["social_meta"])
-    det_verdict, det_conflicts = resolve_final_verdict(pillars, data_gates_passed, shadow_mode=shadow_mode)
+    det_verdict, det_conflicts = resolve_final_verdict(
+        pillars=pillars,
+        data_gates_passed=data_gates_passed,
+        shadow_mode=shadow_mode,
+        er20=features.get("er20"),
+        macro_trend=macro_info.get("macro_trend")
+    )
 
     # 10. Formulate final confidence & reasons
     if not data_gates_passed:
@@ -126,7 +137,7 @@ async def run_v8_evaluation(
             confidence_band = "Medium"
         else:
             confidence_band = "Low"
-        reasons = det_conflicts if det_conflicts else [f"Pillars aligned: Technicals {pillars['technicals']}, Derivatives {pillars['derivatives']}, Social {pillars['social']}"]
+        reasons = det_conflicts if det_conflicts else [f"Pillars aligned: Technicals {pillars['technicals']}, Derivatives {pillars['derivatives']}, Social {pillars['social']}, Efficiency {pillars.get('efficiency', 'neutral')}"]
         degraded_flags = []
 
     # 11. Compute Structure + ATR Levels
@@ -167,7 +178,15 @@ async def run_v8_evaluation(
             "atr14": features.get("atr14"),
             "atr_pct": features.get("atr_pct"),
             "vol_z": features.get("vol_z"),
-            "cvd_24h": features.get("cvd_24h")
+            "cvd_24h": features.get("cvd_24h"),
+            "er20": features.get("er20"),
+            "er_regime": features.get("er_regime"),
+            "bos": features.get("bos"),
+            "range_high": features.get("range_high"),
+            "range_low": features.get("range_low"),
+            "macro_trend": macro_info.get("macro_trend"),
+            "ema50_1d": macro_info.get("ema50_1d"),
+            "ema200_1d": macro_info.get("ema200_1d")
         },
         "categorical": compact_state,
         "jev_raw": jev_raw,

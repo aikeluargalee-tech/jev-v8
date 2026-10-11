@@ -6,6 +6,11 @@ from app.services.indicators import (
     atr,
     volume_zscore,
     cvd_24h,
+    efficiency_ratio,
+    check_break_of_structure,
+    compute_macro_trend,
+    compute_features,
+    compute_compact_state,
     compute_pillars,
     resolve_final_verdict,
     compute_levels
@@ -161,3 +166,154 @@ def test_levels_structure_and_atr():
 
     # Invalid ATR -> has_valid_levels = False
     assert compute_levels(entry, None, swing_high, swing_low)["has_valid_levels"] is False
+
+
+def test_kaufman_efficiency_ratio():
+    """Verify Kaufman Efficiency Ratio (ER20) calculations and bounds."""
+    # 1. Monotonically increasing prices -> ER = 1.0 (maximum efficiency)
+    monotonic_up = [100.0 + i * 5.0 for i in range(25)]
+    er_up = efficiency_ratio(monotonic_up, period=20)
+    assert er_up == 1.0
+
+    # 2. Perfect alternating chop [100, 105, 100, 105, ...] -> net change near 0, path high -> ER ~ 0.0
+    chop = [100.0 if i % 2 == 0 else 105.0 for i in range(25)]
+    er_chop = efficiency_ratio(chop, period=20)
+    assert er_chop is not None
+    assert er_chop < 0.10
+
+    # 3. Insufficient history (< period + 1) -> returns None
+    assert efficiency_ratio([100.0] * 15, period=20) is None
+
+    # 4. Zero path movement -> returns 0.0
+    assert efficiency_ratio([100.0] * 25, period=20) == 0.0
+
+
+def test_break_of_structure_detection():
+    """Verify close-confirmed Break of Structure (BOS) over 20-candle range."""
+    # Base range: 20 candles with highs up to 105.0, lows down to 95.0
+    base_candles = [
+        {"high": 105.0, "low": 95.0, "close": 100.0, "volume": 1000.0}
+        for _ in range(20)
+    ]
+
+    # 1. Bullish breakout: 21st candle closes firmly above 105.0 + 0.1*ATR
+    bull_candles = list(base_candles) + [{"high": 112.0, "low": 104.0, "close": 110.0, "volume": 1500.0}]
+    bos_bull = check_break_of_structure(bull_candles, lookback=20, atr14=10.0)
+    assert bos_bull["bos"] == "BOS_BULLISH"
+    assert bos_bull["range_high"] == 105.0
+    assert bos_bull["range_low"] == 95.0
+
+    # 2. Bearish breakdown: 21st candle closes firmly below 95.0 - 0.1*ATR
+    bear_candles = list(base_candles) + [{"high": 96.0, "low": 88.0, "close": 89.0, "volume": 1500.0}]
+    bos_bear = check_break_of_structure(bear_candles, lookback=20, atr14=10.0)
+    assert bos_bear["bos"] == "BOS_BEARISH"
+
+    # 3. Inside range: 21st candle closes at 101.0
+    inside_candles = list(base_candles) + [{"high": 104.0, "low": 96.0, "close": 101.0, "volume": 1000.0}]
+    bos_inside = check_break_of_structure(inside_candles, lookback=20, atr14=10.0)
+    assert bos_inside["bos"] == "INSIDE_RANGE"
+
+
+def test_daily_macro_trend_computation():
+    """Verify 1D Daily Macro Trend determination from 1D candles."""
+    # 1. 250 Daily candles in uptrend -> close > EMA200 -> bullish
+    uptrend_1d = [{"close": 30000.0 + i * 200.0} for i in range(250)]
+    macro_bull = compute_macro_trend(uptrend_1d)
+    assert macro_bull["macro_trend"] == "bullish"
+    assert macro_bull["ema200_1d"] is not None
+    assert macro_bull["last_close_1d"] > macro_bull["ema200_1d"]
+
+    # 2. 250 Daily candles in downtrend -> close < EMA200 -> bearish
+    downtrend_1d = [{"close": 80000.0 - i * 200.0} for i in range(250)]
+    macro_bear = compute_macro_trend(downtrend_1d)
+    assert macro_bear["macro_trend"] == "bearish"
+    assert macro_bear["last_close_1d"] < macro_bear["ema200_1d"]
+
+    # 3. Insufficient daily history (< 50 candles) -> returns unknown
+    short_1d = [{"close": 60000.0} for _ in range(30)]
+    macro_short = compute_macro_trend(short_1d)
+    assert macro_short["macro_trend"] == "unknown"
+
+
+def test_kaufman_chop_gate_forces_abstain():
+    """
+    Gate 1 Validation:
+    When Kaufman ER20 < 0.25 (consolidation/chop), resolve_final_verdict MUST
+    fail-closed with ABSTAIN even if Technicals and Derivatives are bullish.
+    """
+    pillars_bull = {
+        "technicals": "bullish",
+        "derivatives": "bullish",
+        "social": "neutral",
+        "efficiency": "neutral"
+    }
+
+    # Low efficiency chop (ER = 0.18 < 0.25) -> FORCES ABSTAIN
+    verdict, reasons = resolve_final_verdict(
+        pillars=pillars_bull,
+        data_gates_passed=True,
+        er20=0.18
+    )
+    assert verdict == "ABSTAIN"
+    assert len(reasons) > 0
+    assert "Kaufman ER20" in reasons[0]
+    assert "chop" in reasons[0].lower()
+
+    # High efficiency trending (ER = 0.65 > 0.25) -> Allows BUY verdict
+    verdict_trend, _ = resolve_final_verdict(
+        pillars=pillars_bull,
+        data_gates_passed=True,
+        er20=0.65
+    )
+    assert verdict_trend == "BUY"
+
+
+def test_daily_macro_trend_alignment_veto():
+    """
+    Gate 2 Validation:
+    Swing BUY is vetoed when 1D Macro Trend is bearish.
+    Swing SELL is vetoed when 1D Macro Trend is bullish.
+    """
+    # 4H pillars suggest BUY
+    pillars_buy = {
+        "technicals": "bullish",
+        "derivatives": "bullish",
+        "social": "neutral",
+        "efficiency": "bullish"
+    }
+    # But 1D Daily Macro Trend is bearish -> Counter-trend BUY vetoed -> ABSTAIN
+    verdict_veto_buy, reasons_veto_buy = resolve_final_verdict(
+        pillars=pillars_buy,
+        data_gates_passed=True,
+        er20=0.60,
+        macro_trend="bearish"
+    )
+    assert verdict_veto_buy == "ABSTAIN"
+    assert any("Daily Macro Trend" in r and "vetoed" in r for r in reasons_veto_buy)
+
+    # 4H pillars suggest SELL
+    pillars_sell = {
+        "technicals": "bearish",
+        "derivatives": "bearish",
+        "social": "neutral",
+        "efficiency": "bearish"
+    }
+    # But 1D Daily Macro Trend is bullish -> Counter-trend SELL vetoed -> ABSTAIN
+    verdict_veto_sell, reasons_veto_sell = resolve_final_verdict(
+        pillars=pillars_sell,
+        data_gates_passed=True,
+        er20=0.60,
+        macro_trend="bullish"
+    )
+    assert verdict_veto_sell == "ABSTAIN"
+    assert any("Daily Macro Trend" in r and "vetoed" in r for r in reasons_veto_sell)
+
+    # Aligned trend: 4H BUY with bullish 1D Macro Trend -> Passes
+    verdict_pass, _ = resolve_final_verdict(
+        pillars=pillars_buy,
+        data_gates_passed=True,
+        er20=0.60,
+        macro_trend="bullish"
+    )
+    assert verdict_pass == "BUY"
+

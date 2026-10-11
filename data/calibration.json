@@ -1,7 +1,7 @@
 {
   "dataset_summary": {
     "total_recorded_verdicts": 145,
-    "shadow_mode_verdicts": 109,
+    "shadow_mode_verdicts": 110,
     "min_verdicts_threshold": 60,
     "calibration_dataset_ready": true,
     "confidence_band_distribution": {
