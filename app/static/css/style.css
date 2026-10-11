@@ -172,6 +172,33 @@ body {
     filter: brightness(1.1);
 }
 
+.cloud-trigger-btn {
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid rgba(139, 92, 246, 0.4);
+    color: #c4b5fd;
+    padding: 10px 18px;
+    border-radius: var(--radius-sm);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s ease;
+}
+
+.cloud-trigger-btn:hover {
+    background: rgba(139, 92, 246, 0.3);
+    border-color: rgba(139, 92, 246, 0.8);
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.35);
+}
+
+.status-dot-timer {
+    background: #a855f7 !important;
+    box-shadow: 0 0 8px #a855f7 !important;
+}
+
 /* 2. Permanent Disclaimer & Banners */
 .disclaimer-banner {
     background: rgba(245, 158, 11, 0.08);

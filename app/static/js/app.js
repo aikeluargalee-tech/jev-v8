@@ -17,6 +17,9 @@ async function initApp() {
     // Auto-refresh: Poll live ticker price every 15s, and check for fresh decision packets every 5 minutes
     setInterval(updateLiveTickerPrice, 15000);
     setInterval(loadStaticPacket, 300000);
+
+    // Live countdown to next hourly cloud collection (:05)
+    startNextRefreshCountdown();
 }
 
 function setupEventListeners() {
@@ -52,10 +55,24 @@ function setupEventListeners() {
         });
     });
 
-    // 3. Evaluate Button
+    // 3. Refresh Data Button
     runBtn.addEventListener("click", () => {
         runEvaluation();
     });
+
+    // 3b. On-Demand Cloud Trigger Button
+    const btnCloud = document.getElementById("btn-cloud-trigger");
+    if (btnCloud) {
+        btnCloud.addEventListener("click", () => {
+            const proceed = window.confirm(
+                "Trigger an on-demand cloud calculation?\n\n" +
+                "Click OK to open GitHub Actions in a new tab where you can click 'Run workflow' to immediately fetch 300+ Kraken candles and recalculate the decision card (~35s)."
+            );
+            if (proceed) {
+                window.open("https://github.com/aikeluargalee-tech/jev-v8/actions/workflows/collector.yml", "_blank", "noopener");
+            }
+        });
+    }
 
     // 4. One-Number Copy Buttons (AC-08: Strictly one number per field, never a range)
     document.querySelectorAll(".copy-field-btn").forEach(btn => {
@@ -215,7 +232,7 @@ async function runEvaluation() {
     }
 
     runBtn.disabled = false;
-    runText.textContent = `⚡ Evaluate BTC`;
+    runText.textContent = `🔄 Refresh Data`;
     spinner.classList.add("hidden");
 }
 
@@ -489,4 +506,30 @@ function renderErrorState(errMsg) {
     alertBanner.classList.remove("hidden");
     document.getElementById("alert-banner-text").textContent = `EVALUATION ERROR: ${errMsg}`;
     document.getElementById("reasons-box").textContent = errMsg;
+}
+
+function startNextRefreshCountdown() {
+    updateNextRefreshCountdown();
+    setInterval(updateNextRefreshCountdown, 1000);
+}
+
+function updateNextRefreshCountdown() {
+    const now = new Date();
+    // Cloud collector runs at minute 5 of every hour (:05)
+    let nextRun = new Date(now);
+    if (now.getMinutes() < 5) {
+        nextRun.setMinutes(5, 0, 0);
+    } else {
+        nextRun.setHours(now.getHours() + 1);
+        nextRun.setMinutes(5, 0, 0);
+    }
+    const diffSec = Math.max(0, Math.floor((nextRun - now) / 1000));
+    const mins = Math.floor(diffSec / 60);
+    const secs = diffSec % 60;
+    const timeStr = `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;
+
+    const el = document.getElementById("next-refresh-text");
+    if (el) {
+        el.textContent = `Next Cloud Run: in ${timeStr}`;
+    }
 }

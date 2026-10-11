@@ -33,6 +33,10 @@
                     <span class="status-dot"></span>
                     <span id="freshness-text">Freshness: --s</span>
                 </div>
+                <div class="status-pill">
+                    <span class="status-dot status-dot-timer"></span>
+                    <span id="next-refresh-text">Next Cloud Run: in --m</span>
+                </div>
                 <div class="profile-toggle">
                     <button class="profile-btn active" id="btn-profile-swing" data-profile="SWING">SWING (4h/1D)</button>
                     <button class="profile-btn" id="btn-profile-day" data-profile="DAY_CONTEXT">DAY CONTEXT (15m)</button>
@@ -40,9 +44,12 @@
                 <button class="plain-english-toggle" id="btn-toggle-plain" title="Toggle Plain English Explanations">
                     ℹ️ Plain English: <strong id="plain-english-state">OFF</strong>
                 </button>
-                <button class="run-btn" id="run-btn">
-                    <span id="run-btn-text">⚡ Evaluate BTC</span>
+                <button class="run-btn" id="run-btn" title="Refresh live data & check for new cloud packet">
+                    <span id="run-btn-text">🔄 Refresh Data</span>
                     <div class="spinner hidden" id="run-spinner"></div>
+                </button>
+                <button class="cloud-trigger-btn" id="btn-cloud-trigger" title="Trigger on-demand cloud calculation">
+                    ☁️ On-Demand Cloud Run
                 </button>
             </div>
         </header>
