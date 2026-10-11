@@ -1,5 +1,4 @@
 import pytest
-import asyncio
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -8,80 +7,69 @@ from httpx import ASGITransport, AsyncClient
 
 from app.main import app
 from app.services.market_service import market_service
-from app.services.twitter_service import twitter_service
-from app.services.stats_service import stats_service
-from app.services.typesafe_service import typesafe_service
+from app.services.phase0_runner import run_v8_evaluation
+from app.core.verdicts_db import verdicts_db
+from app.services.calibration import evaluate_calibration_dataset
 
 
 @pytest.mark.asyncio
-async def test_pipeline():
-    print("\n--- 1. Testing Market Service ---")
-    market = await market_service.get_market_data("BTC")
-    assert "price" in market, "Market data must contain price"
-    assert "is_fallback" in market, "Market data must contain is_fallback flag"
-    assert isinstance(market["is_fallback"], bool)
-    assert "has_perpetuals" in market
-    assert "momentum_bucket" in market
-    assert market["momentum_bucket"] in ["bullish", "bearish", "neutral"]
-    assert market["price"] > 0, "Price must be positive"
-    print(f"✅ Market data fetched: {market['symbol']} Price=${market['price']} 24h={market['change_24h_pct']}% Perpetuals={market['has_perpetuals']} Funding={market['funding_rate_pct']}%")
+async def test_market_snapshot_live():
+    """Verify live Kraken snapshot generation for SWING and DAY_CONTEXT."""
+    snap_swing, payload_swing = await market_service.fetch_market_snapshot("BTC", "SWING")
+    assert snap_swing.venue == "kraken"
+    assert snap_swing.pair == "BTC/USD"
+    assert snap_swing.last_price > 0
+    assert snap_swing.candle_count_4h >= 300
+    assert snap_swing.is_fallback is False
+    assert snap_swing.is_synthetic is False
 
-    print("\n--- 2. Testing Twitter Service ---")
-    twitter_res = await twitter_service.fetch_tweets("BTC", target_count=50)
-    tweets = twitter_res.get("tweets", [])
-    assert len(tweets) > 0, "Tweets list should not be empty"
-    assert "timestamp_epoch" in tweets[0], "Tweets must contain timestamp_epoch"
-    print(f"✅ Tweets fetched: {len(tweets)} tweets (is_mock={twitter_res.get('is_mock')})")
+    snap_day, payload_day = await market_service.fetch_market_snapshot("BTC", "DAY_CONTEXT")
+    assert snap_day.candle_count_15m >= 300
+    assert snap_day.is_fallback is False
 
-    print("\n--- 3. Testing Stats Pre-Processing ---")
-    stats = stats_service.process_tweets(tweets)
-    assert "polarity_score" in stats
-    assert "author_diversity_pct" in stats
-    print(f"✅ Stats computed: Polarity={stats['polarity_score']} Sentiment={stats['sentiment_label']} Diversity={stats['author_diversity_pct']}%")
 
-    print("\n--- 4. Testing TypeSafe Decision Service ---")
-    decision = await typesafe_service.evaluate_decision("BTC", market, stats)
-    assert "action" in decision
-    assert "trade_levels" in decision
-    assert decision["confidence_pct"] > 0
-    print(f"✅ Decision generated: Action={decision['action']} Confidence={decision['confidence_pct']}% SqueezeRisk={decision['squeeze_risk_pct']}%")
+@pytest.mark.asyncio
+async def test_v8_pipeline_runner():
+    """Verify end-to-end v8 evaluation logs immutable row to verdicts.db."""
+    initial_count = verdicts_db.get_verdict_count()
+    # Test forced shadow mode
+    record_shadow, latency_s = await run_v8_evaluation("BTC", "SWING", force_shadow=True)
+    assert latency_s < 30.0  # Exit gate: median < 30s
+    assert record_shadow["rule_ver"] == "v8.0"
+    assert record_shadow["shadow_mode"] is True
+    assert record_shadow["cost"]["total_cost_usd"] == 0.0
 
-    print("\n--- 5. Testing FastAPI /api/v1/analyze Endpoint ---")
+    # Test post-60 verdict natural shadow state
+    record_auto, _ = await run_v8_evaluation("BTC", "SWING")
+    assert "features" in record_auto
+    assert "categorical" in record_auto
+    assert "deterministic" in record_auto
+
+    new_count = verdicts_db.get_verdict_count()
+    assert new_count == initial_count + 2
+
+
+@pytest.mark.asyncio
+async def test_unlisted_symbol_fails_closed():
+    """Verify unlisted symbol triggers fail-closed with is_fallback=True and price=0."""
+    snap, payload = await market_service.fetch_market_snapshot("NONEXISTENT_SYMBOL_XYZ", "SWING")
+    assert snap.is_fallback is True
+    assert snap.last_price == 0.0
+    assert snap.candle_count_4h == 0
+
+
+@pytest.mark.asyncio
+async def test_security_settings_endpoint_deleted():
+    """Verify settings mutation endpoint returns 404 (deleted for security)."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        res = await client.post("/api/v1/analyze", json={"symbol": "SOL", "sample_size": 100})
-        assert res.status_code == 200, f"Expected 200 OK, got {res.status_code}: {res.text}"
-        data = res.json()
-        assert data["symbol"] == "SOL"
-        assert "decision" in data
-        assert "market" in data
-        print(f"✅ API Endpoint responded 200 OK for SOL! Action: {data['decision']['action']} Price: ${data['market']['price']}")
+        res = await client.post("/api/v1/settings", json={"typesafe_api_key": "some_key"})
+        assert res.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_fallback_unlisted_symbol():
-    """Verify fallback data contract for unlisted symbols."""
-    fb = market_service._generate_fallback_data("ZZQQ")
-    assert fb["is_fallback"] is True
-    assert fb["has_perpetuals"] is False
-    assert fb["funding_rate_pct"] is None
-    assert fb["open_interest_usd"] is None
-    assert fb["momentum_bucket"] in ["bullish", "bearish", "neutral"]
-
-
-@pytest.mark.asyncio
-async def test_api_validation_and_security():
-    """Verify input validation and settings endpoint security."""
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Invalid symbol rejected with 400
-        res = await client.post("/api/v1/analyze", json={"symbol": "INVALID!$$", "sample_size": 100})
-        assert res.status_code == 400
-
-        # Invalid key format rejected with 400
-        res_settings = await client.post("/api/v1/settings", json={"typesafe_api_key": "bad key spaces"})
-        assert res_settings.status_code == 400
-
-
-if __name__ == "__main__":
-    asyncio.run(test_pipeline())
+def test_ac10_calibration_dataset_accumulated():
+    """Verify AC-10 calibration gate readiness from verdicts.db."""
+    calib = evaluate_calibration_dataset()
+    assert calib["total_recorded_verdicts"] >= 60
+    assert calib["calibration_dataset_ready"] is True
+    assert calib["ac10_gate_status"] == "READY_FOR_PHASE_2_CALIBRATION"

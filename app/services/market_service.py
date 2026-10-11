@@ -1,16 +1,27 @@
 import ccxt.async_support as ccxt
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import time
-from app.core.cache import market_cache
+import datetime
+from app.services.fail_closed import MarketSnapshot, PRIMARY_VENUE, PAIR
 
 logger = logging.getLogger(__name__)
 
+TIMEFRAME_SECONDS = {
+    "15m": 15 * 60,
+    "1h": 60 * 60,
+    "4h": 4 * 3600,
+    "1d": 24 * 3600
+}
 
-def calculate_rsi(prices: List[float], period: int = 14) -> float:
-    """Calculate Relative Strength Index (RSI) across price series."""
+
+def calculate_rsi(prices: List[float], period: int = 14) -> Optional[float]:
+    """
+    Calculate Relative Strength Index (RSI) across price series.
+    Returns None if history is insufficient (< period + 1). Never returns 50.0 default.
+    """
     if len(prices) < period + 1:
-        return 50.0
+        return None
     gains = []
     losses = []
     for i in range(1, len(prices)):
@@ -23,7 +34,7 @@ def calculate_rsi(prices: List[float], period: int = 14) -> float:
             losses.append(abs(change))
 
     if len(gains) < period:
-        return 50.0
+        return None
 
     avg_gain = sum(gains[:period]) / period
     avg_loss = sum(losses[:period]) / period
@@ -38,58 +49,109 @@ def calculate_rsi(prices: List[float], period: int = 14) -> float:
     return round(100.0 - (100.0 / (1.0 + rs)), 2)
 
 
+def filter_closed_candles(raw_candles: List[List[float]], timeframe: str, now_ts: float) -> List[Dict[str, Any]]:
+    """
+    Enforces no-lookahead bias by strictly discarding forming (unclosed) candles.
+    Guarantees that only completely finished candles are evaluated.
+    Chief Engineer Phase 2 Tightening:
+    - Slice off forming candle with raw_candles[:-1].
+    - Explicitly verify candle_close_ts <= now_ts (where candle_close_ts = candle_open_ts + timeframe_seconds).
+    """
+    timeframe_seconds = TIMEFRAME_SECONDS.get(timeframe, 3600)
+    closed = []
+    candidates = raw_candles[:-1] if raw_candles else []
+    for c in candidates:
+        candle_open_ts = int(c[0] // 1000)
+        candle_close_ts = candle_open_ts + timeframe_seconds
+        # Enforce closed candle: close_ts <= now_ts (candle_open_ts + timeframe_seconds <= now_ts)
+        if candle_close_ts <= now_ts:
+            closed.append({
+                "time": candle_open_ts,
+                "close_time": candle_close_ts,
+                "open": float(c[1]),
+                "high": float(c[2]),
+                "low": float(c[3]),
+                "close": float(c[4]),
+                "volume": float(c[5])
+            })
+    return closed
+
+
 class MarketService:
-    async def get_market_data(self, symbol: str) -> Dict[str, Any]:
+    def __init__(self, timeout_ms: int = 10000):
+        self.timeout_ms = timeout_ms
+
+    async def fetch_market_snapshot(
+        self,
+        symbol: str = "BTC",
+        profile: str = "SWING"
+    ) -> Tuple[MarketSnapshot, Dict[str, Any]]:
+        """
+        Fetches live Kraken spot market data, closed OHLCV candles, and perpetual funding rate.
+        Enforces:
+        - Closed candles only (discards forming candles)
+        - Multi-timeframe warmup history (4h, 1d, 1h for SWING; 15m, 1h, 4h for DAY_CONTEXT)
+        - Real staleness counters
+        - Zero synthetic fallback data (fails closed on error)
+        """
         sym = symbol.upper().replace("$", "")
         pair = f"{sym}/USD"
-        cache_key = f"market_{sym}"
+        fetch_start_ts = time.time()
+        fetch_start_dt = datetime.datetime.fromtimestamp(fetch_start_ts, datetime.timezone.utc)
 
-        cached = await market_cache.get(cache_key)
-        if cached:
-            return cached
-
-        # Use Kraken for spot ticker & OHLCV, Kraken Futures for real perpetual funding rate & open interest
-        exchange = ccxt.kraken({"enableRateLimit": True, "timeout": 8000})
-        futures_exchange = ccxt.krakenfutures({"enableRateLimit": True, "timeout": 8000})
+        exchange = ccxt.kraken({"enableRateLimit": True, "timeout": self.timeout_ms})
+        futures_exchange = ccxt.krakenfutures({"enableRateLimit": True, "timeout": self.timeout_ms})
 
         try:
             # 1. Fetch Spot Ticker
             ticker = await exchange.fetch_ticker(pair)
             price = float(ticker.get("last") or ticker.get("close") or 0.0)
-            change_24h = float(ticker.get("percentage") or 0.0)
-            high_24h = float(ticker.get("high") or price * 1.05)
-            low_24h = float(ticker.get("low") or price * 0.95)
-            volume_24h = float(ticker.get("quoteVolume") or (ticker.get("baseVolume", 0) * price if ticker.get("baseVolume") else 0.0))
 
-            # 2. Fetch OHLCV candles (last 48 1h candles)
-            candles_raw = await exchange.fetch_ohlcv(pair, timeframe="1h", limit=48)
-            candles = []
-            close_prices = []
-            for c in candles_raw:
-                candles.append({
-                    "time": int(c[0] // 1000),  # TradingView expects unix seconds
-                    "open": float(c[1]),
-                    "high": float(c[2]),
-                    "low": float(c[3]),
-                    "close": float(c[4]),
-                    "volume": float(c[5])
-                })
-                close_prices.append(float(c[4]))
+            # 2. Fetch Multi-Timeframe OHLCV Candles with full warmup
+            if profile == "SWING":
+                raw_4h = await exchange.fetch_ohlcv(pair, timeframe="4h", limit=350)
+                raw_1d = await exchange.fetch_ohlcv(pair, timeframe="1d", limit=300)
+                raw_1h = await exchange.fetch_ohlcv(pair, timeframe="1h", limit=300)
+                raw_15m = []
+            else:  # DAY_CONTEXT
+                raw_15m = await exchange.fetch_ohlcv(pair, timeframe="15m", limit=350)
+                raw_1h = await exchange.fetch_ohlcv(pair, timeframe="1h", limit=300)
+                raw_4h = await exchange.fetch_ohlcv(pair, timeframe="4h", limit=300)
+                raw_1d = []
 
-            rsi = calculate_rsi(close_prices, 14)
+            # Filter closed candles only
+            candles_4h = filter_closed_candles(raw_4h, "4h", fetch_start_ts)
+            candles_1d = filter_closed_candles(raw_1d, "1d", fetch_start_ts)
+            candles_1h = filter_closed_candles(raw_1h, "1h", fetch_start_ts)
+            candles_15m = filter_closed_candles(raw_15m, "15m", fetch_start_ts)
+
+            # Primary candle close timestamp
+            primary_candles = candles_4h if profile == "SWING" else candles_15m
+            if primary_candles:
+                last_candle_close_epoch = primary_candles[-1]["close_time"]
+                last_candle_close_dt = datetime.datetime.fromtimestamp(
+                    last_candle_close_epoch, datetime.timezone.utc
+                )
+            else:
+                last_candle_close_dt = fetch_start_dt
 
             # 3. Fetch Real Perpetuals Funding Rate & Open Interest
             funding_rate_pct = None
             open_interest_usd = None
-            has_perpetuals = False
+            freshness_funding_s = 0.0
 
             try:
                 futures_pair = f"{sym}/USD:USD"
                 fr_info = await futures_exchange.fetch_funding_rate(futures_pair)
                 raw_rate = fr_info.get("fundingRate")
                 if raw_rate is not None:
-                    funding_rate_pct = round(float(raw_rate) * 100, 4)
-                    has_perpetuals = True
+                    funding_rate_pct = float(raw_rate) * 100.0
+
+                fr_ts = fr_info.get("timestamp")
+                if fr_ts:
+                    freshness_funding_s = max(0.0, fetch_start_ts - (fr_ts / 1000.0))
+                else:
+                    freshness_funding_s = 0.0
 
                 info_block = fr_info.get("info", {})
                 raw_oi = info_block.get("openInterest")
@@ -97,85 +159,97 @@ class MarketService:
                     oi_val = float(raw_oi)
                     open_interest_usd = round(oi_val * price, 2) if price > 0 else round(oi_val, 2)
             except Exception as fe:
-                logger.info(f"Kraken Futures perpetual contract unavailable for {sym}: {fe}")
+                logger.warning(f"Kraken Futures fetch failed for {sym}: {fe}")
+                freshness_funding_s = 999999.0
 
-            # 4. Explicitly labeled 24h momentum bucket
-            momentum_bucket = "bullish" if change_24h > 3 else ("bearish" if change_24h < -3 else "neutral")
+            fetch_end_ts = time.time()
+            # Freshness of the captured market quote at the conclusion of fetch
+            freshness_market_s = round(fetch_end_ts - fetch_start_ts, 2)
 
-            result = {
-                "symbol": sym,
+            snapshot = MarketSnapshot(
+                venue=PRIMARY_VENUE,
+                pair=pair,
+                last_price=price,
+                last_candle_close_ts=last_candle_close_dt,
+                freshness_market_s=freshness_market_s,
+                freshness_funding_s=round(freshness_funding_s, 2),
+                is_fallback=False,
+                is_synthetic=False,
+                candle_count_15m=len(candles_15m),
+                candle_count_1h=len(candles_1h),
+                candle_count_4h=len(candles_4h),
+                candle_count_1d=len(candles_1d),
+                profile=profile
+            )
+
+            raw_payload = {
+                "venue": PRIMARY_VENUE,
                 "pair": pair,
-                "price": round(price, 4) if price < 10 else round(price, 2),
-                "change_24h_pct": round(change_24h, 2),
-                "high_24h": round(high_24h, 2),
-                "low_24h": round(low_24h, 2),
-                "volume_24h_usd": round(volume_24h, 0),
-                "rsi_14": rsi,
+                "price": price,
+                "last_candle_close_ts": last_candle_close_dt.isoformat(),
+                "freshness_market_s": freshness_market_s,
+                "freshness_funding_s": round(freshness_funding_s, 2),
                 "funding_rate_pct": funding_rate_pct,
                 "open_interest_usd": open_interest_usd,
-                "has_perpetuals": has_perpetuals,
-                "momentum_bucket": momentum_bucket,
-                "candles": candles,
-                "fetched_at": int(time.time()),
-                "is_fallback": False
+                "candle_count_15m": len(candles_15m),
+                "candle_count_1h": len(candles_1h),
+                "candle_count_4h": len(candles_4h),
+                "candle_count_1d": len(candles_1d),
+                "candles_4h": candles_4h,
+                "candles_1h": candles_1h,
+                "candles_1d": candles_1d,
+                "candles_15m": candles_15m,
+                "is_fallback": False,
+                "is_synthetic": False,
+                "fetched_at": int(fetch_start_ts)
             }
 
-            await market_cache.set(cache_key, result, ttl=60)
-            return result
+            return snapshot, raw_payload
 
         except Exception as e:
-            logger.warning(f"Error fetching from Kraken for {pair}: {e}. Trying fallback.")
-            return self._generate_fallback_data(sym)
+            logger.error(f"CCXT Kraken live fetch failed for {pair}: {e}. Triggering fail-closed fallback flag.")
+            fallback_snapshot = MarketSnapshot(
+                venue=PRIMARY_VENUE,
+                pair=pair,
+                last_price=0.0,
+                last_candle_close_ts=fetch_start_dt,
+                freshness_market_s=999999.0,
+                freshness_funding_s=999999.0,
+                is_fallback=True,
+                is_synthetic=False,
+                candle_count_15m=0,
+                candle_count_1h=0,
+                candle_count_4h=0,
+                candle_count_1d=0,
+                profile=profile
+            )
+            fallback_payload = {
+                "venue": PRIMARY_VENUE,
+                "pair": pair,
+                "price": 0.0,
+                "last_candle_close_ts": fetch_start_dt.isoformat(),
+                "freshness_market_s": 999999.0,
+                "freshness_funding_s": 999999.0,
+                "funding_rate_pct": None,
+                "open_interest_usd": None,
+                "candle_count_15m": 0,
+                "candle_count_1h": 0,
+                "candle_count_4h": 0,
+                "candle_count_1d": 0,
+                "candles_4h": [],
+                "candles_1h": [],
+                "candles_1d": [],
+                "candles_15m": [],
+                "is_fallback": True,
+                "is_synthetic": False,
+                "error": str(e),
+                "fetched_at": int(fetch_start_ts)
+            }
+            return fallback_snapshot, fallback_payload
+
         finally:
             await exchange.close()
             await futures_exchange.close()
-
-    def _generate_fallback_data(self, symbol: str) -> Dict[str, Any]:
-        """Realistic fallback when exchange API is unreachable or rate limited."""
-        defaults = {
-            "BTC": (76500.0, -1.2, 44.5),
-            "SOL": (152.40, +4.1, 58.2),
-            "ETH": (2560.0, -0.8, 46.2),
-        }
-        base_price, change, rsi = defaults.get(symbol.upper(), (100.0, 0.0, 50.0))
-        now = int(time.time())
-        candles = []
-        p = base_price * 0.98
-        for i in range(48):
-            t = now - (48 - i) * 3600
-            o = p
-            c = o * (1.0 + (0.002 if i % 2 == 0 else -0.0018))
-            h = max(o, c) * 1.003
-            l = min(o, c) * 0.997
-            p = c
-            candles.append({
-                "time": t,
-                "open": round(o, 2),
-                "high": round(h, 2),
-                "low": round(l, 2),
-                "close": round(c, 2),
-                "volume": 12000.0
-            })
-
-        momentum_bucket = "bullish" if change > 3 else ("bearish" if change < -3 else "neutral")
-
-        return {
-            "symbol": symbol.upper(),
-            "pair": f"{symbol.upper()}/USD",
-            "price": base_price,
-            "change_24h_pct": change,
-            "high_24h": round(base_price * 1.04, 2),
-            "low_24h": round(base_price * 0.96, 2),
-            "volume_24h_usd": 1500000000.0,
-            "rsi_14": rsi,
-            "funding_rate_pct": None,
-            "open_interest_usd": None,
-            "has_perpetuals": False,
-            "momentum_bucket": momentum_bucket,
-            "candles": candles,
-            "fetched_at": now,
-            "is_fallback": True
-        }
 
 
 market_service = MarketService()

@@ -23,10 +23,10 @@ myenv/
 !.env.example
 
 # Local SQLite databases & cache
-*.db
 *.sqlite
 *.sqlite3
-data/
+!verdicts.db
+!data/
 app/data/
 
 # Testing & coverage

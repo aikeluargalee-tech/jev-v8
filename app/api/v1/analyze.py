@@ -1,37 +1,31 @@
-from fastapi import APIRouter, HTTPException, Request, Header
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any
 import logging
-import asyncio
 import re
 
-from app.core.config import settings
-from app.services.market_service import market_service
-from app.services.twitter_service import twitter_service
-from app.services.stats_service import stats_service
-from app.services.typesafe_service import typesafe_service
+from app.services.phase0_runner import run_v8_evaluation
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["Analysis"])
 
-KEY_REGEX = re.compile(r"^[A-Za-z0-9_\-\.]{8,128}$")
 SYMBOL_REGEX = re.compile(r"^[A-Z0-9]{1,15}$")
 
 
 class AnalyzeRequest(BaseModel):
-    symbol: str = Field(..., json_schema_extra={"example": "BTC"}, description="Crypto symbol (e.g. BTC, SOL, ETH)")
-    sample_size: int = Field(100, ge=50, le=1000, description="Tweet sample count: 50, 100, 250, 500, or 1000")
+    symbol: str = Field("BTC", description="Crypto symbol (BTC/USD primary)")
+    profile: str = Field("SWING", description="Operational profile: SWING (primary) or DAY_CONTEXT (intraday context)")
+    force_shadow: Optional[bool] = Field(None, description="Force shadow mode status if overriding default calibration window")
 
 
 @router.post("/analyze")
 async def analyze_asset(req: AnalyzeRequest) -> Dict[str, Any]:
     """
-    On-demand market intelligence & decision generation.
-    1. Fetches live market data (CCXT Kraken / Kraken Futures).
-    2. Ingests N tweets (TwitterAPI.io with pagination).
-    3. Runs Tier 1 statistical aggregation & stratified sampling.
-    4. Evaluates state with TypeSafe Jev System One.
+    On-demand decision-support evaluation powered by v8 engine.
+    - Zero trading keys or execution endpoints.
+    - Fails closed on stale, synthetic, fallback, or insufficient history.
+    - Returns Lean 5 indicators, 3 pillars, conflict analysis, and Structure+ATR levels.
     """
     sym = req.symbol.strip().upper().replace("$", "")
     if not SYMBOL_REGEX.match(sym):
@@ -40,122 +34,117 @@ async def analyze_asset(req: AnalyzeRequest) -> Dict[str, Any]:
             detail=f"Invalid crypto symbol '{req.symbol}'. Symbol must be 1-15 alphanumeric characters."
         )
 
-    sample_size = req.sample_size
+    profile = req.profile.upper()
+    if profile not in ["SWING", "DAY_CONTEXT"]:
+        profile = "SWING"
 
     try:
-        # Run market data & tweet ingestion concurrently
-        market_task = market_service.get_market_data(sym)
-        tweets_task = twitter_service.fetch_tweets(sym, target_count=sample_size)
-
-        market_data, twitter_res = await asyncio.gather(market_task, tweets_task)
-
-        tweets = twitter_res.get("tweets", [])
-
-        # Tier 1: Statistical processing
-        social_stats = stats_service.process_tweets(tweets)
-
-        # Tier 2: TypeSafe Jev System One evaluation
-        decision = await typesafe_service.evaluate_decision(
+        record, latency_s = await run_v8_evaluation(
             symbol=sym,
-            market_data=market_data,
-            social_stats=social_stats
+            profile=profile,
+            force_shadow=req.force_shadow
         )
-
         return {
-            "symbol": sym,
             "status": "success",
-            "market": market_data,
-            "social_stats": social_stats,
-            "decision": decision,
-            "tweets_sample": tweets[:100],  # Return up to 100 representative tweets for UI explorer
-            "is_twitter_mock": twitter_res.get("is_mock", False),
-            "is_typesafe_mock": decision.get("is_mock", False)
+            "latency_s": round(latency_s, 2),
+            "record": record
         }
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error analyzing {sym}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to analyze {sym}: {str(e)}")
+        logger.error(f"Error during v8 evaluation of {sym}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to evaluate {sym}: {str(e)}")
 
 
-@router.get("/market/{symbol}")
-async def get_market_summary(symbol: str) -> Dict[str, Any]:
-    """Quick market data lookup for an asset."""
-    sym = symbol.strip().upper().replace("$", "")
-    if not SYMBOL_REGEX.match(sym):
-        raise HTTPException(status_code=400, detail=f"Invalid symbol '{symbol}'. Must be alphanumeric.")
-    try:
-        return await market_service.get_market_data(sym)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/status")
+async def get_system_status() -> Dict[str, Any]:
+    """Returns local engine status and calibration stats."""
+    from app.core.verdicts_db import verdicts_db
+    from app.core.config import settings
 
+    total_verdicts = verdicts_db.get_verdict_count()
+    total_outcomes = verdicts_db.get_outcomes_count()
+    monthly_cost = verdicts_db.get_monthly_cumulative_cost()
+    is_shadow = total_verdicts < settings.SHADOW_MODE_MIN_VERDICTS
 
-class SettingsUpdate(BaseModel):
-    typesafe_api_key: Optional[str] = None
-    twitter_api_key: Optional[str] = None
-
-
-@router.get("/settings")
-async def get_settings_status() -> Dict[str, Any]:
     return {
-        "has_typesafe_key": bool(settings.TYPESAFE_API_KEY),
-        "has_twitter_key": bool(settings.TWITTER_API_KEY)
+        "venue": settings.DEFAULT_VENUE,
+        "pair": settings.DEFAULT_PAIR,
+        "total_logged_verdicts": total_verdicts,
+        "total_verified_outcomes": total_outcomes,
+        "shadow_mode_active": is_shadow,
+        "shadow_mode_threshold": settings.SHADOW_MODE_MIN_VERDICTS,
+        "calibration_min_outcomes": settings.CALIBRATION_MIN_OUTCOMES,
+        "monthly_cumulative_usd": monthly_cost,
+        "monthly_budget_usd": settings.MONTHLY_BUDGET_USD,
+        "rule_ver": "v8.0"
     }
 
 
-@router.post("/settings")
-async def update_settings(
-    payload: SettingsUpdate,
-    request: Request,
-    x_admin_token: Optional[str] = Header(None, alias="X-Admin-Token")
-) -> Dict[str, Any]:
-    """
-    Update API keys with authentication and input sanitization.
-    Permits access from localhost or with a valid X-Admin-Token header.
-    """
-    client_host = request.client.host if request.client else "unknown"
-    is_local = client_host in ("127.0.0.1", "::1", "localhost", "testclient")
-    has_valid_admin_token = bool(settings.ADMIN_TOKEN and x_admin_token == settings.ADMIN_TOKEN)
+class OutcomeRequest(BaseModel):
+    outcome: str = Field(..., description="WIN | LOSS | BREAKEVEN | EXPIRED | ABSTAIN_OBSERVED")
+    exit_price: Optional[float] = Field(None, description="Actual realized exit price")
+    pnl_percent: Optional[float] = Field(None, description="Realized PnL %")
+    r_multiple: Optional[float] = Field(None, description="Realized R-multiple")
+    hit_target: Optional[bool] = Field(None, description="True if primary target reached")
+    hit_stop: Optional[bool] = Field(None, description="True if stop loss hit")
+    notes: Optional[str] = Field(None, description="User trade execution notes")
 
-    if not (is_local or has_valid_admin_token):
-        raise HTTPException(
-            status_code=403,
-            detail="Forbidden: Settings modification is restricted to localhost or authenticated requests."
+
+@router.post("/verdicts/{run_id}/outcome")
+async def record_verdict_outcome(run_id: str, req: OutcomeRequest) -> Dict[str, Any]:
+    """
+    Records a verified forward outcome for a past verdict run.
+    Stores outcome in verdict_outcomes table for AC-10 evaluation.
+    """
+    from app.core.verdicts_db import verdicts_db
+
+    try:
+        res = verdicts_db.record_outcome(
+            run_id=run_id,
+            outcome=req.outcome,
+            exit_price=req.exit_price,
+            pnl_percent=req.pnl_percent,
+            r_multiple=req.r_multiple,
+            hit_target=req.hit_target,
+            hit_stop=req.hit_stop,
+            notes=req.notes
         )
+        return {"status": "success", "outcome": res}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error recording outcome for {run_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to record outcome: {str(e)}")
 
-    from pathlib import Path
-    env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
 
-    env_vars = {}
-    if env_path.exists():
-        for line in env_path.read_text().splitlines():
-            if "=" in line and not line.strip().startswith("#"):
-                k, v = line.split("=", 1)
-                env_vars[k.strip()] = v.strip()
+@router.get("/verdicts/recent")
+async def get_recent_verdicts_with_outcomes(limit: int = 50) -> Dict[str, Any]:
+    """Retrieves recent verdicts with outcome status."""
+    from app.core.verdicts_db import verdicts_db
 
-    if payload.typesafe_api_key is not None and payload.typesafe_api_key.strip():
-        k = payload.typesafe_api_key.strip()
-        if not KEY_REGEX.match(k):
-            raise HTTPException(status_code=400, detail="Invalid TypeSafe API key format.")
-        settings.TYPESAFE_API_KEY = k
-        typesafe_service.api_key = k
-        env_vars["TYPESAFE_API_KEY"] = k
-
-    if payload.twitter_api_key is not None and payload.twitter_api_key.strip():
-        k = payload.twitter_api_key.strip()
-        if not KEY_REGEX.match(k):
-            raise HTTPException(status_code=400, detail="Invalid TwitterAPI key format.")
-        settings.TWITTER_API_KEY = k
-        twitter_service.api_key = k
-        env_vars["TWITTER_API_KEY"] = k
-
-    env_content = "\n".join(f"{k}={v}" for k, v in env_vars.items()) + "\n"
-    env_path.write_text(env_content)
-
+    lim = max(1, min(limit, 200))
+    rows = verdicts_db.get_verdicts_with_outcomes(lim)
     return {
         "status": "success",
-        "has_typesafe_key": bool(settings.TYPESAFE_API_KEY),
-        "has_twitter_key": bool(settings.TWITTER_API_KEY)
+        "count": len(rows),
+        "verdicts": rows
     }
 
+
+@router.get("/calibration")
+async def get_calibration_report() -> Dict[str, Any]:
+    """
+    Returns full calibration status:
+    - AC-10 gate status and band performance (High vs Low)
+    - Empirical calibration status (requires >=100 outcomes)
+    """
+    from app.services.calibration import get_full_calibration_report
+
+    try:
+        report = get_full_calibration_report()
+        return {"status": "success", "report": report}
+    except Exception as e:
+        logger.error(f"Error compiling calibration report: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate calibration report: {str(e)}")

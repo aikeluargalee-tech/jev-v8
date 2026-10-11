@@ -3,7 +3,7 @@ import logging
 from typing import List, Dict, Any, Optional
 import time
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 
 from app.core.config import settings
@@ -21,12 +21,10 @@ def parse_twitter_timestamp(ts_str: Optional[str]) -> int:
     if not ts_str:
         return int(time.time())
     try:
-        # ISO 8601 (e.g. 2026-09-22T04:00:00.000Z)
         if ts_str.endswith("Z"):
             return int(datetime.fromisoformat(ts_str.replace("Z", "+00:00")).timestamp())
         elif "T" in ts_str:
             return int(datetime.fromisoformat(ts_str).timestamp())
-        # RFC 2822 (e.g. Tue Sep 22 04:00:00 +0000 2026)
         dt = parsedate_to_datetime(ts_str)
         return int(dt.timestamp())
     except Exception:
@@ -45,13 +43,7 @@ class TwitterService:
         names = {
             "BTC": "Bitcoin",
             "SOL": "Solana",
-            "ETH": "Ethereum",
-            "DOGE": "Dogecoin",
-            "XRP": "Ripple",
-            "ADA": "Cardano",
-            "AVAX": "Avalanche",
-            "NEAR": "Near",
-            "SUI": "Sui"
+            "ETH": "Ethereum"
         }
         full_name = names.get(sym, sym)
         if sym == full_name:
@@ -61,56 +53,40 @@ class TwitterService:
     async def fetch_tweets(self, symbol: str, target_count: int = 100) -> Dict[str, Any]:
         """
         Fetches up to target_count tweets for a given symbol.
-        
-        Cost-Saving Ingestion Algorithm:
-        1. Checks database for existing known tweet IDs for this symbol.
-        2. Queries TwitterAPI.io page by page (ordered latest first).
-        3. EARLY STOPPING: As soon as a returned tweet already exists in our database,
-           we STOP calling the TwitterAPI immediately to save API credits!
-        4. Saves newly fetched tweets to the database.
-        5. Fills the remaining required count directly from the local database so the user
-           gets their full requested sample size at minimal API cost.
+        In Phase 0-1, if TWITTER_API_KEY is not configured, returns empty real tweets
+        without generating fake simulated tweets. Database poisoning is strictly eliminated.
         """
         sym = symbol.upper().replace("$", "").strip()
         if not SYMBOL_REGEX.match(sym):
             raise ValueError(f"Invalid crypto symbol '{symbol}'. Must be 1-15 alphanumeric characters.")
 
         cache_key = f"tweets_{sym}_{target_count}"
-
-        # 1. Check in-memory short TTL cache (e.g. within 60s)
         cached = await social_cache.get(cache_key)
         if cached:
-            logger.info(f"In-memory cache hit for tweets: {cache_key}")
             return cached
 
-        # 2. Check known tweet IDs in local database
+        # Check known tweet IDs in local database
         known_ids = await db.get_known_ids(sym, limit=5000)
 
-        # 3. If API Key not set, generate simulated tweets and save to DB
+        # If API key is not configured, return existing real DB tweets or empty
         if not self.api_key or self.api_key.strip() == "":
-            logger.info("TWITTER_API_KEY not configured. Checking database or generating simulated tweets.")
+            logger.info("TWITTER_API_KEY not configured. Checking DB for real historical tweets.")
             db_tweets = await db.get_recent_tweets(sym, limit=target_count)
-            if len(db_tweets) >= target_count:
-                result = {
-                    "symbol": sym,
-                    "count": len(db_tweets),
-                    "target_count": target_count,
-                    "is_mock": True,
-                    "api_calls_made": 0,
-                    "cost_saved": True,
-                    "yield_deficit": False,
-                    "tweets": db_tweets
-                }
-                await social_cache.set(cache_key, result, ttl=30)
-                return result
+            result = {
+                "symbol": sym,
+                "count": len(db_tweets),
+                "target_count": target_count,
+                "api_calls_made": 0,
+                "cost_saved": True,
+                "yield_deficit": len(db_tweets) < target_count,
+                "tweets": db_tweets,
+                "is_fallback": len(db_tweets) == 0,
+                "cost_usd": 0.0
+            }
+            await social_cache.set(cache_key, result, ttl=settings.CACHE_TTL_SECONDS)
+            return result
 
-            # Otherwise generate sample and save to DB
-            simulated_data = self._generate_simulated_tweets(sym, target_count)
-            await db.save_tweets(sym, simulated_data["tweets"])
-            await social_cache.set(cache_key, simulated_data, ttl=30)
-            return simulated_data
-
-        # 4. Call TwitterAPI.io with Early-Stopping Deduplication
+        # Call TwitterAPI.io with pagination & early stopping
         new_tweets: List[Dict[str, Any]] = []
         cursor: Optional[str] = None
         headers = {"X-API-Key": self.api_key}
@@ -118,7 +94,6 @@ class TwitterService:
 
         early_stopped = False
         api_pages_called = 0
-        # Allow sufficient pages even if vendor returns fewer than 40 tweets per page
         max_pages = min(35, max(5, (target_count // 15) + 3))
 
         async with httpx.AsyncClient(timeout=settings.REQUEST_TIMEOUT) as client:
@@ -144,52 +119,47 @@ class TwitterService:
 
                     for t in raw_tweets:
                         tid = str(t.get("id", ""))
-                        
-                        # EARLY STOPPING CHECK:
-                        # If this tweet is already in DB, stop paginating! Older tweets are already in DB!
                         if tid in known_ids:
-                            logger.info(f"Early stop triggered! Tweet {tid} already in DB. Halting API pagination.")
                             early_stopped = True
                             break
 
-                        author = t.get("author") or {}
-                        created_at_raw = t.get("createdAt") or t.get("created_at") or ""
-                        epoch_ts = parse_twitter_timestamp(created_at_raw)
-
-                        normalized = {
+                        pub_ts = parse_twitter_timestamp(
+                            t.get("createdAt") or t.get("created_at") or t.get("timestamp")
+                        )
+                        tweet_obj = {
                             "id": tid,
                             "text": t.get("text", ""),
-                            "created_at": created_at_raw,
-                            "timestamp_epoch": epoch_ts,
+                            "created_at": t.get("createdAt") or t.get("created_at", ""),
+                            "timestamp_epoch": pub_ts,
                             "likes": int(t.get("likeCount") or t.get("likes") or 0),
                             "retweets": int(t.get("retweetCount") or t.get("retweets") or 0),
                             "replies": int(t.get("replyCount") or t.get("replies") or 0),
-                            "author_username": author.get("userName") or author.get("username") or "anonymous",
-                            "author_followers": int(author.get("followers") or author.get("followersCount") or 0),
-                            "author_verified": bool(author.get("isBlueVerified") or author.get("verified") or False)
+                            "author_username": t.get("author", {}).get("userName") or t.get("author_username", "unknown"),
+                            "author_followers": int(t.get("author", {}).get("followers") or t.get("author_followers") or 0),
+                            "author_verified": bool(t.get("author", {}).get("isBlueVerified") or t.get("author_verified", False))
                         }
-                        new_tweets.append(normalized)
+                        new_tweets.append(tweet_obj)
+                        if len(new_tweets) >= target_count:
+                            break
 
                     if early_stopped:
                         break
 
-                    cursor = data.get("next_cursor") or data.get("cursor") or data.get("has_next_page")
+                    cursor = data.get("next_cursor") or data.get("cursor")
                     if not cursor:
                         break
 
                 except Exception as e:
-                    logger.error(f"Error querying TwitterAPI.io: {e}")
+                    logger.error(f"Error querying TwitterAPI.io for {sym}: {e}")
                     break
 
-        # Save any new tweets to the local database
+        # Save real new tweets to DB
         if new_tweets:
             await db.save_tweets(sym, new_tweets)
-            logger.info(f"Saved {len(new_tweets)} newly fetched tweets to local DB for {sym}")
 
-        # If we need more tweets to fulfill target_count (e.g. user requested 500, but only 30 were new)
+        # Merge with existing DB historical tweets if needed
         combined_tweets = list(new_tweets)
         if len(combined_tweets) < target_count:
-            needed = target_count - len(combined_tweets)
             db_historical = await db.get_recent_tweets(sym, limit=target_count * 2)
             existing_ids = {t["id"] for t in combined_tweets}
             for dbt in db_historical:
@@ -199,12 +169,8 @@ class TwitterService:
                     if len(combined_tweets) >= target_count:
                         break
 
-        yield_deficit = len(combined_tweets) < target_count
-        if yield_deficit:
-            logger.warning(
-                f"Target count {target_count} requested for {sym}, but only {len(combined_tweets)} "
-                "available from live search and local database combined."
-            )
+        # TwitterAPI.io pricing: $0.15 per 1,000 tweets retrieved
+        tweet_cost_usd = round(len(new_tweets) * 0.00015, 6)
 
         result = {
             "symbol": sym,
@@ -213,70 +179,13 @@ class TwitterService:
             "target_count": target_count,
             "api_pages_called": api_pages_called,
             "early_stopped": early_stopped,
-            "yield_deficit": yield_deficit,
-            "is_mock": False,
-            "tweets": combined_tweets
+            "yield_deficit": len(combined_tweets) < target_count,
+            "tweets": combined_tweets,
+            "is_fallback": len(combined_tweets) == 0,
+            "cost_usd": tweet_cost_usd
         }
         await social_cache.set(cache_key, result, ttl=settings.CACHE_TTL_SECONDS)
         return result
-
-    def _generate_simulated_tweets(self, symbol: str, count: int) -> Dict[str, Any]:
-        """Generates realistic crypto sentiment tweets for testing when no API key is provided."""
-        import random
-        templates = [
-            f"${symbol} holding key support beautifully on the 4h timeframe. Bullish consolidation.",
-            f"Panic sellers dumping ${symbol} right into institutional bid blocks. Classic retail mistake.",
-            f"Perpetual funding rate for ${symbol} just flipped negative while spot volume spikes. Short squeeze imminent.",
-            f"If ${symbol} loses this level we are heading straight to local support. Watch your stop losses.",
-            f"Massive whale transfer of ${symbol} spotted heading off exchange into cold storage.",
-            f"Solana and ${symbol} leading the market recovery today. Narrative shift underway.",
-            f"Funding is deeply negative on ${symbol} futures. Bears are getting greedy here.",
-            f"Breaking: Major protocol milestone reached on ${symbol} ecosystem testnet.",
-            f"Taking partial profits on my ${symbol} swing long at resistance, trailing stop to entry.",
-            f"Extreme fear in the sentiment index for ${symbol}. Historically this is where generational bottoms form.",
-            f"${symbol} volume divergence setting up. Price consolidating while RSI prints bullish divergence.",
-            f"Market makers hunting liquidations below support on ${symbol}. Don't get chopped up."
-        ]
-
-        authors = [
-            ("QuantAlphaX", 145000, True),
-            ("CryptoPulseLead", 89000, True),
-            ("MacroTrader_Dan", 34000, False),
-            ("OnChainAlerts", 210000, True),
-            ("SolanaVibe", 12000, False),
-            ("DeFiAnalyst99", 54000, False),
-            ("WhaleStatsFeed", 410000, True),
-            ("ChartWizardCrypto", 76000, True)
-        ]
-
-        now = int(time.time())
-        generated = []
-        for i in range(min(count, 1000)):
-            text = random.choice(templates)
-            author = random.choice(authors)
-            generated.append({
-                "id": f"tweet_{symbol.lower()}_{now - i*60}_{i}",
-                "text": text,
-                "created_at": "Recent",
-                "timestamp_epoch": now - i * 60,
-                "likes": random.randint(5, 3400),
-                "retweets": random.randint(1, 450),
-                "replies": random.randint(0, 120),
-                "author_username": author[0],
-                "author_followers": author[1],
-                "author_verified": author[2]
-            })
-
-        return {
-            "symbol": symbol,
-            "count": len(generated),
-            "newly_fetched_count": len(generated),
-            "target_count": count,
-            "api_pages_called": 0,
-            "early_stopped": False,
-            "is_mock": True,
-            "tweets": generated
-        }
 
 
 twitter_service = TwitterService()

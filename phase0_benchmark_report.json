@@ -1,0 +1,23 @@
+{
+  "benchmark": "Phase 0 - 100 Real Kraken CCXT Fetches",
+  "timestamp_utc": "2026-10-10T10:35:31Z",
+  "total_runs": 100,
+  "success_runs": 100,
+  "fail_closed_runs": 0,
+  "latencies_seconds": {
+    "median": 11.117,
+    "p95": 13.13,
+    "mean": 11.317,
+    "min": 9.786,
+    "max": 15.206
+  },
+  "total_benchmark_duration_s": 1182.48,
+  "db_rows_logged": 100,
+  "phase0_cost_usd": 0.0,
+  "projected_monthly_swing_cost_usd": 3.0,
+  "exit_gates": {
+    "median_latency_under_30s": true,
+    "projected_cost_under_budget": true,
+    "database_immutable_logging_intact": true
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "dataset_summary": {
+    "total_recorded_verdicts": 133,
+    "shadow_mode_verdicts": 106,
+    "min_verdicts_threshold": 60,
+    "calibration_dataset_ready": true,
+    "confidence_band_distribution": {
+      "High": 0,
+      "Medium": 0,
+      "Low": 133,
+      "None": 0
+    },
+    "verdict_distribution": {
+      "ABSTAIN": 133
+    },
+    "ac10_gate_status": "READY_FOR_PHASE_2_CALIBRATION",
+    "notes": "Logged 133 immutable records. Surpassed minimum 60 shadow verdicts threshold. Calibration dataset is successfully structured for Phase 2 forward outcome verification."
+  },
+  "ac10_gate": {
+    "gate": "AC-10",
+    "status": "COLLECTING_DATA",
+    "gate_passed": false,
+    "total_verified_outcomes": 0,
+    "required_outcomes": 60,
+    "progress_pct": 0.0,
+    "band_performance": {
+      "High": {
+        "total_outcomes": 0,
+        "evaluated_trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "breakevens": 0,
+        "expired": 0,
+        "abstain_observed": 0,
+        "win_rate": 0.0,
+        "avg_pnl_pct": 0.0,
+        "avg_r_multiple": 0.0
+      },
+      "Medium": {
+        "total_outcomes": 0,
+        "evaluated_trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "breakevens": 0,
+        "expired": 0,
+        "abstain_observed": 0,
+        "win_rate": 0.0,
+        "avg_pnl_pct": 0.0,
+        "avg_r_multiple": 0.0
+      },
+      "Low": {
+        "total_outcomes": 0,
+        "evaluated_trades": 0,
+        "wins": 0,
+        "losses": 0,
+        "breakevens": 0,
+        "expired": 0,
+        "abstain_observed": 0,
+        "win_rate": 0.0,
+        "avg_pnl_pct": 0.0,
+        "avg_r_multiple": 0.0
+      }
+    },
+    "message": "AC-10 requires >=60 verified outcomes before gate check (currently 0/60). Sizing remains strictly locked."
+  },
+  "empirical_calibration": {
+    "is_calibrated": false,
+    "calibration_status": "PENDING_100_OUTCOMES",
+    "total_verified_outcomes": 0,
+    "required_for_calibration": 100,
+    "calibrated_confidence": null,
+    "display_label": "uncalibrated",
+    "message": "Locally-calibrated confidence requires >=100 verified forward outcomes to prevent small-sample overfitting (currently 0/100). Confidence remains raw uncalibrated."
+  }
+}

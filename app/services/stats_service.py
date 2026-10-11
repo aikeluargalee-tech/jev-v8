@@ -1,5 +1,4 @@
-from typing import List, Dict, Any
-
+from typing import List, Dict, Any, Optional
 
 FEAR_KEYWORDS = {
     "crash", "dump", "liquidation", "sell", "selling", "dead", "bear", "bearish",
@@ -16,22 +15,26 @@ class StatsService:
     @staticmethod
     def process_tweets(tweets: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        Tier 1 Deterministic Pre-Processing across all N ingested tweets.
-        Calculates engagement velocity, author diversity, polarity score,
-        and extracts a stratified sample for TypeSafe System One evaluation.
+        Deterministic pre-processing of ingested tweets.
+        Calculates author diversity, polarity category, and summary metrics.
+        Returns polarity_cat='unavailable' when sample is empty. Never masks empty data as 'neutral'.
         """
         if not tweets:
             return {
                 "sample_size": 0,
                 "unique_authors_count": 0,
+                "diversity_ratio": 0.0,
                 "author_diversity_pct": 0.0,
                 "total_likes": 0,
                 "total_retweets": 0,
                 "avg_engagement": 0.0,
                 "fear_mentions": 0,
                 "greed_mentions": 0,
-                "polarity_score": 0.0,
-                "sentiment_label": "Neutral",
+                "polarity_score": None,
+                "sentiment_label": "Unavailable",
+                "polarity_cat": "unavailable",
+                "engagement_vel": "unavailable",
+                "is_available": False,
                 "stratified_sample": []
             }
 
@@ -66,67 +69,45 @@ class StatsService:
 
         sample_size = len(tweets)
         unique_authors = len(authors)
-        diversity_pct = round((unique_authors / sample_size) * 100.0, 1)
+        diversity_ratio = round(unique_authors / sample_size, 3) if sample_size > 0 else 0.0
+        diversity_pct = round(diversity_ratio * 100.0, 1)
         avg_engagement = round((total_likes + total_retweets * 2) / sample_size, 1)
 
         total_polar = fear_count + greed_count
         if total_polar > 0:
-            # Score from -1.0 (extreme fear) to +1.0 (extreme greed)
             polarity_score = round((greed_count - fear_count) / total_polar, 2)
         else:
             polarity_score = 0.0
 
+        # Map polarity score to v8 schema categories
         if polarity_score <= -0.4:
+            polarity_cat = "extreme_fear"
             sentiment_label = "Extreme Panic"
         elif polarity_score < -0.1:
+            polarity_cat = "fear"
             sentiment_label = "Bearish / Fearful"
         elif polarity_score <= 0.1:
+            polarity_cat = "neutral"
             sentiment_label = "Neutral / Mixed"
         elif polarity_score < 0.4:
+            polarity_cat = "greed"
             sentiment_label = "Bullish / Optimistic"
         else:
+            polarity_cat = "euphoria"
             sentiment_label = "Euphoric / Greedy"
 
-        # Stratified sampling: Top 25 engaged + 25 latest
-        sorted_by_engagement = sorted(
-            tweets,
-            key=lambda x: x.get("likes", 0) + x.get("retweets", 0) * 2,
-            reverse=True
-        )
-        top_engaged = sorted_by_engagement[:25]
-
-        # Use first 25 as latest (assuming latest order)
-        latest_tweets = tweets[:25]
-
-        # Merge and deduplicate by ID
-        seen_ids = set()
-        stratified_sample = []
-
-        for t in top_engaged:
-            tid = t.get("id")
-            if tid and tid not in seen_ids:
-                seen_ids.add(tid)
-                stratified_sample.append({
-                    "author": t.get("author_username"),
-                    "text": t.get("text"),
-                    "likes": t.get("likes"),
-                    "type": "high_engagement"
-                })
-
-        for t in latest_tweets:
-            tid = t.get("id")
-            if tid and tid not in seen_ids:
-                seen_ids.add(tid)
-                stratified_sample.append({
-                    "author": t.get("author_username"),
-                    "text": t.get("text"),
-                    "likes": t.get("likes"),
-                    "type": "latest_breaking"
-                })
+        # Map engagement velocity
+        if avg_engagement > 100:
+            engagement_vel = "high"
+        elif avg_engagement > 20:
+            engagement_vel = "normal"
+        else:
+            engagement_vel = "low"
 
         return {
             "sample_size": sample_size,
             "unique_authors_count": unique_authors,
+            "diversity_ratio": diversity_ratio,
             "author_diversity_pct": diversity_pct,
             "total_likes": total_likes,
             "total_retweets": total_retweets,
@@ -135,7 +116,9 @@ class StatsService:
             "greed_mentions": greed_count,
             "polarity_score": polarity_score,
             "sentiment_label": sentiment_label,
-            "stratified_sample": stratified_sample
+            "polarity_cat": polarity_cat,
+            "engagement_vel": engagement_vel,
+            "is_available": True
         }
 
 

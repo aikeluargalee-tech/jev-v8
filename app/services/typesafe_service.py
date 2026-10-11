@@ -1,7 +1,10 @@
 import logging
+import time
 from typing import Dict, Any, Optional
-from typesafe_sdk import AsyncTypeSafeClient, Choice, Noul, Score
 from app.core.config import settings
+from app.services.mock_jev import mock_jev_adapter
+from app.services.fail_closed import check_jev_fallback
+from app.core.verdicts_db import verdicts_db
 
 logger = logging.getLogger(__name__)
 
@@ -9,359 +12,134 @@ logger = logging.getLogger(__name__)
 class TypeSafeService:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.TYPESAFE_API_KEY
+        # Phase 0-2: ENABLE_JEV is strictly False by default. Zero real Jev credits burned without explicit opt-in.
+        self.enable_jev = getattr(settings, "ENABLE_JEV", False)
 
-    async def evaluate_decision(
+    async def evaluate_state(
         self,
-        symbol: str,
-        market_data: Dict[str, Any],
-        social_stats: Dict[str, Any]
+        compact_state: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        Evaluate market microstructure + social sentiment state using TypeSafe Jev System One.
+        Phase 2 TypeSafe Adapter.
+        - By default (ENABLE_JEV=False), uses mock_jev_adapter() for zero cost.
+        - When ENABLE_JEV=True:
+          1. Enforces cost guardrail ($20 hard block, $16 warning).
+          2. Limits to exactly 2 questions: TradeAction and DataQuality.
+          3. Passes ONLY compact categorical state (saving tokens, zero raw numbers).
+          4. Verifies response against check_jev_fallback().
+          5. Fails closed on any API, auth, or network failure.
         """
-        sym = symbol.upper().replace("$", "")
-        price = market_data.get("price", 100.0)
-        funding_rate = market_data.get("funding_rate_pct")
-        open_interest_usd = market_data.get("open_interest_usd")
-        has_perpetuals = bool(market_data.get("has_perpetuals", False))
-        momentum_bucket = market_data.get("momentum_bucket", "neutral")
-        rsi = market_data.get("rsi_14", 50.0)
-        change_24h = market_data.get("change_24h_pct", 0.0)
-        sample_size = social_stats.get("sample_size", 0)
+        if not self.enable_jev:
+            logger.info("Using mock_jev_adapter() (ENABLE_JEV=False by default).")
+            return mock_jev_adapter(compact_state)
 
-        # Build structured state
-        state = {
-            "asset": sym,
-            "market": {
-                "current_price": price,
-                "change_24h_pct": change_24h,
-                "momentum_bucket": momentum_bucket,
-                "rsi_14": rsi,
-                "has_perpetuals": has_perpetuals,
-                "funding_rate_pct": funding_rate,
-                "open_interest_usd": open_interest_usd,
-                "volume_24h_usd": market_data.get("volume_24h_usd", 0)
-            },
-            "social_stats": {
-                "sample_size": sample_size,
-                "author_diversity_pct": social_stats.get("author_diversity_pct", 0),
-                "total_likes": social_stats.get("total_likes", 0),
-                "polarity_score": social_stats.get("polarity_score", 0),
-                "sentiment_label": social_stats.get("sentiment_label", "Neutral")
-            },
-            "representative_tweets": social_stats.get("stratified_sample", [])
-        }
-
-        # Questions for TypeSafe System One
-        questions = {
-            "trade_action": Choice(
-                instructions=(
-                    "Given `market` data (RSI, price change momentum, open interest, and perpetuals funding rate if present) "
-                    "and `social_stats` across `sample_size` tweets, what is the best immediate trading action for `asset`?"
-                ),
-                criteria={
-                    "STRONG_BUY": "High-conviction long (e.g. short squeeze setup, capitulation bottom, or major verified breakout).",
-                    "BUY": "Favorable risk-to-reward long entry with positive upside expectation.",
-                    "HOLD": "Neutral, range-bound, or consolidating; no clear asymmetric statistical edge.",
-                    "TAKE_PROFIT": "Market is overbought or meeting heavy resistance; secure existing gains.",
-                    "SELL": "Bearish breakdown, deteriorating momentum, or high downside continuation risk.",
-                    "STRONG_SELL": "Crowded top exhaustion, extreme positive funding, or severe fundamental catalyst breakdown."
-                }
-            ),
-            "sentiment_spectrum": Score(
-                instructions="Rate the prevailing social mood in `social_stats` and `representative_tweets`.",
-                criteria=[
-                    "Extreme Panic / Capitulation",
-                    "Cautious / Bearish",
-                    "Neutral / Mixed",
-                    "Optimistic / Bullish",
-                    "Euphoric / Greedy"
-                ]
-            ),
-            "is_short_squeeze_risk": Noul(
-                instructions=(
-                    "If `market.has_perpetuals` is true, does the state show negative `market.funding_rate_pct` clashing with "
-                    "`social_stats.sentiment_label` panic at support, indicating a short squeeze risk? If perpetuals data is unavailable, "
-                    "does extreme oversold RSI clashing with peak panic indicate a potential capitulation bounce?"
-                )
-            ),
-            "catalyst_impact": Score(
-                instructions="Rate the significance of any events or breaking news described in `representative_tweets`.",
-                criteria=[
-                    "No news or pure retail noise",
-                    "Minor routine update or rumors",
-                    "Moderate ecosystem milestone",
-                    "Major market-shifting catalyst"
-                ]
+        # 1. Budget Guardrail: Check monthly cumulative cost ($20 budget, $16 warning, $20 hard block)
+        monthly_cost = verdicts_db.get_monthly_cumulative_cost()
+        if monthly_cost >= settings.MONTHLY_BUDGET_USD:
+            logger.error(
+                f"Monthly cost guardrail breached (${monthly_cost:.2f} >= ${settings.MONTHLY_BUDGET_USD:.2f}). "
+                "Hard-blocking external Jev API call to prevent credit exhaustion."
             )
-        }
+            return {
+                "TradeAction": {"choice": "ABSTAIN", "confidence": 0.0, "probabilities": {}},
+                "DataQuality": {"choice": "poor", "confidence": 0.0},
+                "is_fallback": True,
+                "model_ver": "cost-guardrail-blocked",
+                "latency_ms": 0
+            }
+        elif monthly_cost >= 0.8 * settings.MONTHLY_BUDGET_USD:
+            logger.warning(
+                f"Cost warning: Monthly cumulative cost (${monthly_cost:.2f}) reached 80% of budget (${settings.MONTHLY_BUDGET_USD:.2f})."
+            )
 
-        # Check if API key is provided
-        if self.api_key and self.api_key.strip() != "":
-            try:
-                async with AsyncTypeSafeClient(api_key=self.api_key) as client:
-                    response = await client.system_one(state=state, questions=questions)
+        # 2. Check API Key
+        if not self.api_key or not self.api_key.strip():
+            logger.warning("ENABLE_JEV is True but no TYPESAFE_API_KEY set. Triggering fail-closed fallback.")
+            return {
+                "TradeAction": {"choice": "ABSTAIN", "confidence": 0.0, "probabilities": {}},
+                "DataQuality": {"choice": "poor", "confidence": 0.0},
+                "is_fallback": True,
+                "model_ver": "fallback-unconfigured",
+                "latency_ms": 0
+            }
 
-                action_ans = response.answers.get("trade_action")
-                sentiment_ans = response.answers.get("sentiment_spectrum")
-                squeeze_ans = response.answers.get("is_short_squeeze_risk")
-                catalyst_ans = response.answers.get("catalyst_impact")
+        # 3. Real TypeSafe Jev API call: 2 questions max (TradeAction + DataQuality)
+        start_t = time.time()
+        try:
+            from typesafe_sdk import AsyncTypeSafeClient, Choice
 
-                trade_action = getattr(action_ans, "choice", "HOLD")
-                action_conf = round(float(getattr(action_ans, "confidence", 0.75)) * 100, 1)
-                raw_probs = getattr(action_ans, "probabilities", {}) or {}
-
-                action_probabilities = {}
-                if raw_probs:
-                    for k, v in raw_probs.items():
-                        val = float(v)
-                        if 0.0 < val <= 1.0:
-                            val = val * 100.0
-                        action_probabilities[k] = round(val, 1)
-                else:
-                    action_probabilities = {trade_action: action_conf}
-
-                sentiment_score_val = getattr(sentiment_ans, "score", 2.0)
-                sentiment_levels = [
-                    "Extreme Panic / Capitulation",
-                    "Cautious / Bearish",
-                    "Neutral / Mixed",
-                    "Optimistic / Bullish",
-                    "Euphoric / Greedy"
-                ]
-                sentiment_idx = min(max(0, int(round(sentiment_score_val))), len(sentiment_levels) - 1)
-                sentiment_text = sentiment_levels[sentiment_idx]
-
-                squeeze_prob = round(float(getattr(squeeze_ans, "noul", 0.15)) * 100, 1)
-                catalyst_score_val = getattr(catalyst_ans, "score", 0.0)
-
-                return self._build_decision_output(
-                    symbol=sym,
-                    price=price,
-                    trade_action=trade_action,
-                    confidence=action_conf,
-                    action_probabilities=action_probabilities,
-                    sentiment_text=sentiment_text,
-                    sentiment_score=sentiment_score_val,
-                    squeeze_prob=squeeze_prob,
-                    catalyst_score=catalyst_score_val,
-                    funding_rate=funding_rate,
-                    rsi=rsi,
-                    change_24h=change_24h,
-                    is_mock=False
+            questions = {
+                "TradeAction": Choice(
+                    instructions="Given the compact market, derivatives, and social sentiment state, select the immediate trade action for BTC/USD.",
+                    criteria={
+                        "BUY": "Favorable risk-to-reward long entry with positive upside expectation and structural alignment.",
+                        "HOLD": "Holding existing position; trend remains intact but no new edge to scale.",
+                        "SELL": "Exit long position / defensive de-risk.",
+                        "ABSTAIN": "No actionable edge, mixed signals, elevated risk, or consolidating chop."
+                    }
+                ),
+                "DataQuality": Choice(
+                    instructions="Rate the overall consistency and reliability of the categorical input data.",
+                    criteria={
+                        "reliable": "Data is consistent across indicators with low contradiction.",
+                        "mixed": "Some indicators conflict or show divergent regime transitions.",
+                        "poor": "Extreme contradictions, stale components, or unavailable metrics."
+                    }
                 )
+            }
 
-            except Exception as e:
-                logger.error(f"TypeSafe API evaluation failed: {e}. Using deterministic decision fallback.")
+            async with AsyncTypeSafeClient(api_key=self.api_key) as client:
+                response = await client.system_one(state=compact_state, questions=questions)
 
-        # Fallback if no API key or API call failed
-        logger.info("Using deterministic quantitative decision model (TYPESAFE_API_KEY not configured or failed).")
-        return self._deterministic_decision(
-            sym, price, change_24h, rsi, funding_rate, social_stats, has_perpetuals=has_perpetuals
-        )
+            latency_ms = int((time.time() - start_t) * 1000)
 
-    def _build_decision_output(
-        self,
-        symbol: str,
-        price: float,
-        trade_action: str,
-        confidence: float,
-        sentiment_text: str,
-        sentiment_score: float,
-        squeeze_prob: float,
-        catalyst_score: float,
-        funding_rate: Optional[float],
-        rsi: float,
-        change_24h: float,
-        action_probabilities: Optional[Dict[str, float]] = None,
-        is_mock: bool = False
-    ) -> Dict[str, Any]:
-        """Formulates actionable trade levels, probability distribution, and rationale."""
-        all_actions = ["STRONG_BUY", "BUY", "HOLD", "TAKE_PROFIT", "SELL", "STRONG_SELL"]
-        
-        # Ensure full 100% normalized distribution across all 6 actions
-        normalized_probs = {}
-        if action_probabilities and len(action_probabilities) >= 2:
-            total_raw = sum(action_probabilities.values()) or 1.0
-            for act in all_actions:
-                val = action_probabilities.get(act, 0.0)
-                normalized_probs[act] = round((val / total_raw) * 100.0, 1)
-        else:
-            # Distribute based on winner confidence
-            winner_pct = min(max(float(confidence), 30.0), 92.0)
-            remainder = 100.0 - winner_pct
-            other_actions = [a for a in all_actions if a != trade_action]
-            weights = [0.4, 0.3, 0.15, 0.1, 0.05]
-            normalized_probs[trade_action] = round(winner_pct, 1)
-            for idx, act in enumerate(other_actions):
-                normalized_probs[act] = round(remainder * weights[idx], 1)
+            action_ans = response.answers.get("TradeAction")
+            quality_ans = response.answers.get("DataQuality")
 
-        # Fix minor rounding to exactly 100.0
-        diff = round(100.0 - sum(normalized_probs.values()), 1)
-        if diff != 0 and trade_action in normalized_probs:
-            normalized_probs[trade_action] = round(normalized_probs[trade_action] + diff, 1)
+            raw_choice = getattr(action_ans, "choice", "ABSTAIN")
+            raw_conf = float(getattr(action_ans, "confidence", 0.0))
+            raw_probs = getattr(action_ans, "probabilities", {}) or {}
 
-        # Calculate levels based on action
-        if trade_action in ["STRONG_BUY", "BUY"]:
-            entry_min = round(price * 0.995, 2)
-            entry_max = round(price * 1.002, 2)
-            stop_loss = round(price * 0.962, 2)
-            tp1 = round(price * 1.045, 2)
-            tp2 = round(price * 1.085, 2)
-            sl_pct = round(((stop_loss - price) / price) * 100, 2)
-            tp1_pct = round(((tp1 - price) / price) * 100, 2)
-            tp2_pct = round(((tp2 - price) / price) * 100, 2)
-            rr_ratio = round(abs(tp2_pct / sl_pct), 2) if sl_pct != 0 else 2.5
-        elif trade_action in ["SELL", "STRONG_SELL"]:
-            entry_min = round(price * 0.998, 2)
-            entry_max = round(price * 1.005, 2)
-            stop_loss = round(price * 1.038, 2)
-            tp1 = round(price * 0.955, 2)
-            tp2 = round(price * 0.915, 2)
-            sl_pct = round(((stop_loss - price) / price) * 100, 2)
-            tp1_pct = round(((tp1 - price) / price) * 100, 2)
-            tp2_pct = round(((tp2 - price) / price) * 100, 2)
-            rr_ratio = round(abs(tp2_pct / sl_pct), 2) if sl_pct != 0 else 2.5
-        elif trade_action == "TAKE_PROFIT":
-            entry_min = round(price * 0.99, 2)
-            entry_max = round(price * 1.01, 2)
-            stop_loss = round(price * 0.98, 2)
-            tp1 = round(price * 1.02, 2)
-            tp2 = round(price * 1.05, 2)
-            sl_pct = -2.0
-            tp1_pct = +2.0
-            tp2_pct = +5.0
-            rr_ratio = 2.5
-        else:  # HOLD
-            entry_min = price
-            entry_max = price
-            stop_loss = round(price * 0.95, 2)
-            tp1 = round(price * 1.05, 2)
-            tp2 = round(price * 1.10, 2)
-            sl_pct = -5.0
-            tp1_pct = +5.0
-            tp2_pct = +10.0
-            rr_ratio = 2.0
+            probs_dict = {str(k): float(v) for k, v in raw_probs.items()} if isinstance(raw_probs, dict) else {}
 
-        # Build dynamic rationale
-        reasons = []
-        if squeeze_prob > 60:
-            if funding_rate is not None and funding_rate < 0:
-                reasons.append(f"Short squeeze probability is elevated ({squeeze_prob}%) due to negative perpetual funding ({funding_rate}%).")
-            else:
-                reasons.append(f"Capitulation reversal probability is elevated ({squeeze_prob}%) amidst extreme retail panic.")
-        if rsi < 35:
-            reasons.append(f"RSI-14 indicates oversold conditions ({rsi}).")
-        elif rsi > 68:
-            reasons.append(f"RSI-14 indicates overbought momentum ({rsi}).")
+            qual_choice = getattr(quality_ans, "choice", "mixed")
+            qual_conf = float(getattr(quality_ans, "confidence", 0.5))
 
-        if "Panic" in sentiment_text or "Fear" in sentiment_text:
-            reasons.append(f"Social sentiment reflects prevailing fear/panic ({sentiment_text}), presenting contrarian absorption.")
-        elif "Euphoric" in sentiment_text:
-            reasons.append(f"Social sentiment shows high euphoria ({sentiment_text}), warranting cautious position sizing.")
+            model_version = getattr(response, "model", "typesafe-jev-v8")
 
-        if catalyst_score >= 2.0:
-            reasons.append("Significant ecosystem or market-moving catalyst detected in recent discussions.")
+            jev_result = {
+                "TradeAction": {
+                    "choice": raw_choice,
+                    "confidence": raw_conf,
+                    "probabilities": probs_dict
+                },
+                "DataQuality": {
+                    "choice": qual_choice,
+                    "confidence": qual_conf
+                },
+                "is_fallback": False,
+                "model_ver": str(model_version),
+                "latency_ms": latency_ms
+            }
 
-        if not reasons:
-            reasons.append("Market momentum and social sentiment are balanced with no extreme divergence.")
+            # 4. Fallback verification: Run check_jev_fallback() to prevent synthetic/pseudo-precision contamination
+            is_valid, fb_reason = check_jev_fallback(jev_result)
+            if not is_valid:
+                logger.error(f"Jev returned fixed/synthetic fallback response ({fb_reason})! Flagging fail-closed.")
+                jev_result["is_fallback"] = True
 
-        rationale = " ".join(reasons)
+            return jev_result
 
-        return {
-            "symbol": symbol,
-            "action": trade_action,
-            "confidence_pct": normalized_probs.get(trade_action, round(confidence, 1)),
-            "action_probabilities": normalized_probs,
-            "sentiment_label": sentiment_text,
-            "sentiment_score": round(float(sentiment_score), 2),
-            "squeeze_risk_pct": squeeze_prob,
-            "catalyst_impact_score": round(float(catalyst_score), 2),
-            "trade_levels": {
-                "entry_range": [entry_min, entry_max],
-                "stop_loss": stop_loss,
-                "stop_loss_pct": sl_pct,
-                "target_1": tp1,
-                "target_1_pct": tp1_pct,
-                "target_2": tp2,
-                "target_2_pct": tp2_pct,
-                "risk_reward_ratio": rr_ratio
-            },
-            "rationale": rationale,
-            "is_mock": is_mock
-        }
-
-    def _deterministic_decision(
-        self,
-        symbol: str,
-        price: float,
-        change_24h: float,
-        rsi: float,
-        funding_rate: Optional[float],
-        social_stats: Dict[str, Any],
-        has_perpetuals: bool = False
-    ) -> Dict[str, Any]:
-        """Rule-based quantitative model fallback when TypeSafe API key is not yet set."""
-        polarity = social_stats.get("polarity_score", 0.0)
-
-        # Logic for high-conviction setup: require real perpetual funding rate to be negative, OR extreme oversold divergence
-        if has_perpetuals and funding_rate is not None and funding_rate < -0.01 and polarity < -0.2:
-            action = "STRONG_BUY"
-            confidence = 88.5
-            squeeze_prob = 84.0
-            sentiment_text = "Extreme Panic / Capitulation"
-            sentiment_score = 0.5
-            catalyst_score = 2.1
-        elif rsi < 35 and polarity < -0.1:
-            action = "BUY"
-            confidence = 81.0
-            squeeze_prob = 62.0
-            sentiment_text = "Cautious / Bearish"
-            sentiment_score = 1.2
-            catalyst_score = 1.0
-        elif rsi > 70 and has_perpetuals and funding_rate is not None and funding_rate > 0.03:
-            action = "STRONG_SELL"
-            confidence = 86.0
-            squeeze_prob = 10.0
-            sentiment_text = "Euphoric / Greedy"
-            sentiment_score = 4.0
-            catalyst_score = 1.5
-        elif change_24h > 12 and rsi > 65:
-            action = "TAKE_PROFIT"
-            confidence = 79.0
-            squeeze_prob = 20.0
-            sentiment_text = "Euphoric / Greedy"
-            sentiment_score = 3.8
-            catalyst_score = 1.8
-        elif change_24h < -8 and rsi < 40:
-            action = "BUY"
-            confidence = 77.5
-            squeeze_prob = 55.0
-            sentiment_text = "Cautious / Bearish"
-            sentiment_score = 1.0
-            catalyst_score = 0.8
-        else:
-            action = "HOLD"
-            confidence = 72.0
-            squeeze_prob = 25.0
-            sentiment_text = social_stats.get("sentiment_label", "Neutral / Mixed")
-            sentiment_score = 2.0
-            catalyst_score = 0.5
-
-        return self._build_decision_output(
-            symbol=symbol,
-            price=price,
-            trade_action=action,
-            confidence=confidence,
-            sentiment_text=sentiment_text,
-            sentiment_score=sentiment_score,
-            squeeze_prob=squeeze_prob,
-            catalyst_score=catalyst_score,
-            funding_rate=funding_rate,
-            rsi=rsi,
-            change_24h=change_24h,
-            is_mock=True
-        )
+        except Exception as e:
+            latency_ms = int((time.time() - start_t) * 1000)
+            logger.error(f"Error invoking TypeSafe Jev API: {e}", exc_info=True)
+            return {
+                "TradeAction": {"choice": "ABSTAIN", "confidence": 0.0, "probabilities": {}},
+                "DataQuality": {"choice": "poor", "confidence": 0.0},
+                "is_fallback": True,
+                "model_ver": "typesafe-error",
+                "latency_ms": latency_ms
+            }
 
 
 typesafe_service = TypeSafeService()

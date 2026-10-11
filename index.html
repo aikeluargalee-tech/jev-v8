@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jev v8 — Pure Decision-Support Terminal</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="app/static/css/style.css">
+</head>
+
+<body>
+    <div class="terminal-container">
+        <!-- 1. Header & Status Ribbon (Element 1) -->
+        <header class="navbar">
+            <div class="brand">
+                <div class="logo-badge">v8</div>
+                <div class="brand-text">
+                    <span class="brand-title">Jev Decision Terminal</span>
+                    <span class="brand-subtitle font-mono">v8.0 Pure Decision-Support</span>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                <div class="status-pill">
+                    <span class="status-dot"></span>
+                    <span id="venue-text">Kraken Spot: BTC/USD</span>
+                </div>
+                <div class="status-pill">
+                    <span class="status-dot"></span>
+                    <span id="freshness-text">Freshness: --s</span>
+                </div>
+                <div class="profile-toggle">
+                    <button class="profile-btn active" id="btn-profile-swing" data-profile="SWING">SWING (4h/1D)</button>
+                    <button class="profile-btn" id="btn-profile-day" data-profile="DAY_CONTEXT">DAY CONTEXT (15m)</button>
+                </div>
+                <button class="plain-english-toggle" id="btn-toggle-plain" title="Toggle Plain English Explanations">
+                    ℹ️ Plain English: <strong id="plain-english-state">OFF</strong>
+                </button>
+                <button class="run-btn" id="run-btn">
+                    <span id="run-btn-text">⚡ Evaluate BTC</span>
+                    <div class="spinner hidden" id="run-spinner"></div>
+                </button>
+            </div>
+        </header>
+
+        <!-- 2. Permanent Disclaimer & Alert Banner (Element 2) -->
+        <div class="disclaimer-banner">
+            <span>⚖️ <strong>Pure Decision-Support Terminal</strong>: No order placement. No auto-trade. No exchange execution links. All trading decisions and risk are entirely your responsibility.</span>
+        </div>
+
+        <div class="system-alert-banner hidden" id="system-alert-banner">
+            <span id="alert-banner-text">DEMO DATA — NOT LIVE</span>
+        </div>
+
+        <div class="shadow-alert-banner" id="shadow-alert-banner">
+            <span>🛡️ <strong>SHADOW MODE ACTIVE</strong>: Run <span id="shadow-run-count">--</span>/60. Decision calibration dataset collecting. Levels hidden until window completion.</span>
+        </div>
+
+        <!-- Main Terminal Grid (Elements 3 to 7) -->
+        <main class="terminal-grid">
+            <!-- Left Column: Primary Decision & Pillars -->
+            <div class="grid-left">
+                <!-- 3. Primary Decision Card (Element 3 & 4) -->
+                <section class="card decision-card">
+                    <div class="card-header">
+                        <span class="card-title">Decision Output</span>
+                        <span class="timestamp font-mono" id="verdict-timestamp">Awaiting evaluation</span>
+                    </div>
+
+                    <div class="verdict-hero">
+                        <div class="verdict-badge badge-neutral" id="verdict-badge">
+                            <span class="verdict-icon" id="verdict-icon">⚪</span>
+                            <span class="verdict-text" id="verdict-text">READY</span>
+                        </div>
+                        <div class="confidence-container">
+                            <div class="confidence-band font-mono" id="confidence-band">--</div>
+                            <div class="confidence-label">Confidence Band</div>
+                            <div class="confidence-raw font-mono" id="confidence-raw">Raw: -- <span class="uncalibrated-pill">(uncalibrated)</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Market Price Snapshot -->
+                    <div class="price-strip font-mono">
+                        <div class="price-item">
+                            <span class="p-label">BTC/USD Price:</span>
+                            <span class="p-val" id="market-price">$--</span>
+                        </div>
+                        <div class="price-item">
+                            <span class="p-label">Funding Rate:</span>
+                            <span class="p-val" id="funding-rate">--%</span>
+                        </div>
+                        <div class="price-item">
+                            <span class="p-label">RSI(14):</span>
+                            <span class="p-val" id="rsi-val">--</span>
+                        </div>
+                        <div class="price-item">
+                            <span class="p-label">ATR(14):</span>
+                            <span class="p-val" id="atr-val">--</span>
+                        </div>
+                    </div>
+
+                    <!-- Conflict Box -->
+                    <div class="conflict-banner hidden" id="conflict-banner">
+                        <span class="conflict-icon">⚠️</span>
+                        <span class="conflict-msg" id="conflict-msg">Conflicts detected across pillars. Defaulting to ABSTAIN.</span>
+                    </div>
+
+                    <!-- Reasons / Explanation -->
+                    <div class="reasons-box" id="reasons-box">
+                        Click "Evaluate BTC" to analyze current market structure, Lean 5 indicators, and pillar confluence.
+                    </div>
+                </section>
+
+                <!-- 4. Pillars & Confluence Card (Element 5) -->
+                <section class="card pillars-card">
+                    <div class="card-header">
+                        <span class="card-title">Confluence Pillars</span>
+                        <span class="card-sub font-mono">3 Orthogonal Sources</span>
+                    </div>
+
+                    <div class="pillars-grid">
+                        <div class="pillar-box" id="pillar-tech">
+                            <div class="pillar-header">
+                                <span class="pillar-name">📊 Technicals</span>
+                                <span class="pillar-state state-neutral" id="state-tech">--</span>
+                            </div>
+                            <p class="pillar-detail" id="detail-tech">EMA20/50/200 Stack & RSI14</p>
+                            <p class="plain-english-text hidden" id="plain-tech">Evaluates trend direction and momentum over 300+ candles.</p>
+                        </div>
+
+                        <div class="pillar-box" id="pillar-deriv">
+                            <div class="pillar-header">
+                                <span class="pillar-name">⚡ Derivatives</span>
+                                <span class="pillar-state state-neutral" id="state-deriv">--</span>
+                            </div>
+                            <p class="pillar-detail" id="detail-deriv">Perpetual Funding Rate & OI</p>
+                            <p class="plain-english-text hidden" id="plain-deriv">Detects crowded short or long positions that could squeeze.</p>
+                        </div>
+
+                        <div class="pillar-box" id="pillar-soc">
+                            <div class="pillar-header">
+                                <span class="pillar-name">🌐 Social Sentiment</span>
+                                <span class="pillar-state state-neutral" id="state-soc">--</span>
+                            </div>
+                            <p class="pillar-detail" id="detail-soc">Polarity, Diversity & Engagement</p>
+                            <p class="plain-english-text hidden" id="plain-soc">Summary crowd sentiment: extreme fear acts as contrarian absorption.</p>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Right Column: Decision Levels & Risk Calculator -->
+            <div class="grid-right">
+                <!-- 5. Decision Levels Card (Element 6) -->
+                <section class="card levels-card">
+                    <div class="card-header">
+                        <span class="card-title">Decision Levels</span>
+                        <span class="method-tag font-mono" id="levels-method">Structure + ATR</span>
+                    </div>
+
+                    <!-- Locked in shadow mode -->
+                    <div class="shadow-locked-box" id="shadow-locked-box">
+                        <div class="lock-icon">🔒</div>
+                        <h3>Levels Hidden in Shadow Mode</h3>
+                        <p>First 60 verdicts run in shadow calibration mode to verify performance before revealing trade levels.</p>
+                        <span class="shadow-progress font-mono" id="shadow-progress-text">Progress: --/60</span>
+                    </div>
+
+                    <!-- Unlocked levels view -->
+                    <div class="levels-content hidden" id="levels-content">
+                        <div class="level-row">
+                            <span class="lvl-label">Entry Zone</span>
+                            <span class="lvl-val font-mono" id="lvl-entry">--</span>
+                            <button class="copy-field-btn" data-field="Entry" id="btn-copy-entry">📋 Copy Entry</button>
+                        </div>
+                        <div class="level-row">
+                            <span class="lvl-label">Stop-Loss</span>
+                            <span class="lvl-val font-mono text-danger" id="lvl-stop">--</span>
+                            <button class="copy-field-btn" data-field="Stop" id="btn-copy-stop">📋 Copy Stop</button>
+                        </div>
+                        <div class="level-row">
+                            <span class="lvl-label">Target 1 (Primary)</span>
+                            <span class="lvl-val font-mono text-success" id="lvl-tp1">--</span>
+                            <button class="copy-field-btn" data-field="Target 1" id="btn-copy-tp1">📋 Copy T1</button>
+                        </div>
+                        <div class="level-row" id="row-target-ext">
+                            <span class="lvl-label">Target 2 (Extended)</span>
+                            <span class="lvl-val font-mono text-success" id="lvl-tp2">--</span>
+                            <button class="copy-field-btn" data-field="Target 2" id="btn-copy-tp2">📋 Copy T2</button>
+                        </div>
+                        <div class="invalidation-strip font-mono" id="lvl-invalidation">
+                            Invalidation: --
+                        </div>
+                        <div class="levels-warning">
+                            ⚠️ Warning: Pure decision support. No order placed. Not an active stop.
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 6. Deliberate Risk Calculator (Element 7) -->
+                <section class="card risk-card">
+                    <div class="card-header accordion-toggle" id="calc-toggle">
+                        <span class="card-title">🧮 Deliberate Risk Calculator</span>
+                        <span class="accordion-arrow" id="calc-arrow">▼</span>
+                    </div>
+                    <div class="calc-body collapsed" id="calc-body">
+                        <p class="calc-desc">Calculate mathematical position size before placing any manual order:</p>
+                        <div class="calc-form">
+                            <div class="calc-group">
+                                <label for="calc-equity">Total Account Equity ($)</label>
+                                <input type="number" id="calc-equity" placeholder="e.g. 10000" min="0">
+                            </div>
+                            <div class="calc-group">
+                                <label for="calc-risk-pct">Risk Tolerance (% of Equity)</label>
+                                <input type="number" id="calc-risk-pct" placeholder="e.g. 1.0" min="0.1" max="10" step="0.1" value="1.0">
+                            </div>
+                            <div class="calc-group">
+                                <label for="calc-stop-pct">Stop-Loss Distance (%)</label>
+                                <input type="number" id="calc-stop-pct" placeholder="e.g. 3.5" min="0.1" step="0.1">
+                            </div>
+                            <button class="calc-btn" id="btn-calc-size">Compute Safe Position Size</button>
+                        </div>
+                        <div class="calc-result hidden" id="calc-result">
+                            <div class="result-row">
+                                <span>Max $ at Risk:</span>
+                                <strong class="font-mono text-danger" id="calc-max-risk">$--</strong>
+                            </div>
+                            <div class="result-row">
+                                <span>Recommended Position Size:</span>
+                                <strong class="font-mono text-success" id="calc-pos-size">$--</strong>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 7. AC-10 Calibration & Forward Outcomes Accordion -->
+                <section class="card calibration-card">
+                    <div class="card-header accordion-toggle" id="cal-toggle">
+                        <span class="card-title">📊 AC-10 Calibration & Outcomes</span>
+                        <span class="accordion-arrow" id="cal-arrow">▼</span>
+                    </div>
+                    <div class="calc-body collapsed" id="cal-body">
+                        <div class="cal-status-row">
+                            <span class="cal-badge" id="ac10-status-badge">AC-10: COLLECTING (0/60)</span>
+                            <span class="cal-badge font-mono" id="cal-status-badge">Calibration: Pending (0/100)</span>
+                        </div>
+                        <p class="cal-msg" id="cal-msg">Record forward outcomes to evaluate High band vs Low band performance per AC-10 gate.</p>
+
+                        <div class="outcome-form">
+                            <h4 class="form-title">Record Forward Outcome for Current Run</h4>
+                            <div class="calc-group">
+                                <label for="outcome-run-id">Target Run ID</label>
+                                <input type="text" id="outcome-run-id" readonly placeholder="Run ID will appear here">
+                            </div>
+                            <div class="calc-group">
+                                <label for="outcome-choice">Realized Forward Outcome</label>
+                                <select id="outcome-choice">
+                                    <option value="WIN">WIN (Primary Target Reached)</option>
+                                    <option value="LOSS">LOSS (Stop-Loss Hit)</option>
+                                    <option value="BREAKEVEN">BREAKEVEN (Exited at Entry)</option>
+                                    <option value="EXPIRED">EXPIRED (Session Invalidated)</option>
+                                    <option value="ABSTAIN_OBSERVED">ABSTAIN OBSERVED (Chop / Capital Preserved)</option>
+                                </select>
+                            </div>
+                            <div class="calc-group">
+                                <label for="outcome-pnl">Realized PnL % (Optional)</label>
+                                <input type="number" id="outcome-pnl" placeholder="e.g. +3.5 or -1.5" step="0.1">
+                            </div>
+                            <button class="calc-btn" id="btn-save-outcome">Save Verified Outcome</button>
+                            <div class="outcome-success hidden" id="outcome-saved-msg">✓ Outcome recorded successfully!</div>
+                        </div>
+
+                        <div class="cal-table-wrap">
+                            <h4 class="form-title">Band Performance Summary</h4>
+                            <table class="cal-table">
+                                <thead>
+                                    <tr>
+                                        <th>Band</th>
+                                        <th>Outcomes</th>
+                                        <th>Wins</th>
+                                        <th>Losses</th>
+                                        <th>Win Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="cal-table-body">
+                                    <tr><td>High</td><td>0</td><td>0</td><td>0</td><td>0.0%</td></tr>
+                                    <tr><td>Medium</td><td>0</td><td>0</td><td>0</td><td>0.0%</td></tr>
+                                    <tr><td>Low</td><td>0</td><td>0</td><td>0</td><td>0.0%</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+
+        <!-- Footer -->
+        <footer class="terminal-footer font-mono">
+            <span>Run ID: <span id="footer-run-id">--</span></span>
+            <span>State Hash: <span id="footer-state-hash">--</span></span>
+            <span>Monthly Budget: <span id="footer-cost">$0.00 / $20.00</span></span>
+        </footer>
+    </div>
+
+    <script src="app/static/js/app.js"></script>
+</body>
+
+</html>

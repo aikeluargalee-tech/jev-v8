@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 
 from app.core.config import settings
@@ -12,29 +13,48 @@ BASE_DIR = Path(__file__).resolve().parent
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="On-demand crypto market intelligence and decision terminal powered by TypeSafe Jev System One."
+    description="Jev v8 Pure Decision-Support Terminal."
 )
 
-# CORS Configuration
-allowed_origins_raw = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
-allow_credentials = "*" not in allowed_origins_raw
+# Content Security Policy & Security Headers Middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com; "
+            "script-src 'self' 'unsafe-inline'; "
+            "connect-src 'self';"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        return response
 
+app.add_middleware(SecurityHeadersMiddleware)
+
+# CORS Configuration - Localhost only
+allowed_origins_raw = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins_raw,
-    allow_credentials=allow_credentials,
-    allow_methods=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
 # Mount Static Files and Templates
 static_dir = BASE_DIR / "static"
 templates_dir = BASE_DIR / "templates"
+data_dir = BASE_DIR.parent / "data"
 
 static_dir.mkdir(parents=True, exist_ok=True)
 templates_dir.mkdir(parents=True, exist_ok=True)
+data_dir.mkdir(parents=True, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+app.mount("/app/static", StaticFiles(directory=str(static_dir)), name="app_static")
+app.mount("/data", StaticFiles(directory=str(data_dir)), name="data")
 templates = Jinja2Templates(directory=str(templates_dir))
 
 # Include API Router
@@ -47,9 +67,7 @@ async def root(request: Request):
         request=request,
         name="index.html",
         context={
-            "app_name": settings.APP_NAME,
-            "has_typesafe_key": bool(settings.TYPESAFE_API_KEY),
-            "has_twitter_key": bool(settings.TWITTER_API_KEY)
+            "app_name": settings.APP_NAME
         }
     )
 
@@ -60,6 +78,5 @@ async def health():
         "status": "healthy",
         "app": settings.APP_NAME,
         "version": settings.APP_VERSION,
-        "typesafe_configured": bool(settings.TYPESAFE_API_KEY),
-        "twitter_configured": bool(settings.TWITTER_API_KEY)
+        "host": settings.HOST
     }
