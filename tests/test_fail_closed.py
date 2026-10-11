@@ -81,6 +81,25 @@ def test_case_b_staleness_triggers_fail_closed():
     assert any("Market stale" in f for f in fails_d)
 
 
+def test_case_b2_candle_staleness_triggers_fail_closed():
+    """Test Case B2: Exchange feed frozen / stale primary candle triggers fail-closed."""
+    # SWING: 4h candle older than 4.5h (16,200s) -> fail
+    old_4h_ts = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=20000)
+    snap_swing = make_valid_snapshot("SWING")
+    snap_swing.last_candle_close_ts = old_4h_ts
+    passed_s, fails_s = check_fail_closed(snap_swing)
+    assert passed_s is False
+    assert any("Primary candle stale" in f and "exchange feed frozen" in f for f in fails_s)
+
+    # DAY_CONTEXT: 15m candle older than 25m (1,500s) -> fail
+    old_15m_ts = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=2000)
+    snap_day = make_valid_snapshot("DAY_CONTEXT")
+    snap_day.last_candle_close_ts = old_15m_ts
+    passed_d, fails_d = check_fail_closed(snap_day)
+    assert passed_d is False
+    assert any("Primary candle stale" in f and "exchange feed frozen" in f for f in fails_d)
+
+
 def test_case_c_insufficient_warmup_triggers_fail_closed():
     """Test Case C: Missing required history candles triggers NO_VERDICT."""
     snap = make_valid_snapshot("SWING")

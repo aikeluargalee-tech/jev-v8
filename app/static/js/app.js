@@ -966,7 +966,7 @@ async function triggerOneClickCloudRun() {
             }, 5000);
 
         } else if (res.status === 401 || res.status === 403) {
-            localStorage.removeItem("jev_gh_token");
+            removeCloudToken();
             alert("GitHub token was rejected (expired or missing permissions). Please click again to enter a valid token.");
             btnCloud.className = "cloud-trigger-btn";
             btnCloud.innerHTML = origHtml;
