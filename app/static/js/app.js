@@ -11,6 +11,9 @@ document.addEventListener("DOMContentLoaded", () => {
 async function initApp() {
     setupEventListeners();
 
+    // Proactively purge any legacy persistent storage for security
+    try { localStorage.removeItem("jev_gh_token"); } catch (e) {}
+
     if (localStorage.getItem("jev_plain_english") === "true") {
         plainEnglishEnabled = true;
     }
@@ -834,7 +837,7 @@ function updateNextRefreshCountdown() {
 let isCloudRunActive = false;
 
 function getCloudToken() {
-    return sessionStorage.getItem("jev_gh_token") || localStorage.getItem("jev_gh_token") || "";
+    return sessionStorage.getItem("jev_gh_token") || "";
 }
 
 function setCloudToken(val) {

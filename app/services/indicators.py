@@ -326,10 +326,15 @@ def compute_features(candles: List[Dict[str, Any]], profile: str = "SWING") -> D
     # Break of Structure (BOS) over 20-candle range
     bos_info = check_break_of_structure(candles, lookback=20, atr14=atr14_val)
 
-    # Recent swing high/low over last 20 candles
-    recent_window = min(20, len(candles))
-    swing_high = max(highs[-recent_window:]) if recent_window > 0 else closes[-1]
-    swing_low = min(lows[-recent_window:]) if recent_window > 0 else closes[-1]
+    # Recent swing high/low over completed lookback candles (strictly excluding current candle to prevent self-reference)
+    if len(candles) >= 2:
+        lookback = min(20, len(candles) - 1)
+        ref_candles = candles[-(lookback + 1):-1]
+        swing_high = max(c["high"] for c in ref_candles)
+        swing_low = min(c["low"] for c in ref_candles)
+    else:
+        swing_high = closes[-1]
+        swing_low = closes[-1]
 
     return {
         "ema20": round(ema20_val, 2) if ema20_val is not None else None,
@@ -520,7 +525,9 @@ def resolve_final_verdict(
         return "ABSTAIN", [f"Kaufman ER20 ({er20:.4f} < 0.25): Consolidation/chop regime detected. Hard chop gate forces ABSTAIN."]
 
     conflicts = []
-    vals = [pillars["technicals"], pillars["derivatives"], pillars["social"]]
+    # Evaluate active real pillars: technicals, derivatives, and efficiency (structure & ER20)
+    eff_pillar = pillars.get("efficiency", pillars.get("social", "neutral"))
+    vals = [pillars.get("technicals", "unavailable"), pillars.get("derivatives", "unavailable"), eff_pillar]
     effective = [v for v in vals if v != "unavailable"]
 
     if len(effective) < 2:
@@ -535,7 +542,7 @@ def resolve_final_verdict(
     elif bear >= 2 and bull == 0:
         raw_verdict = "SELL"
     elif bull > 0 and bear > 0:
-        conflicts.append(f"Conflicts detected: Technicals {pillars['technicals']} vs Derivatives {pillars['derivatives']} vs Social {pillars['social']}")
+        conflicts.append(f"Conflicts detected: Technicals {pillars.get('technicals')} vs Derivatives {pillars.get('derivatives')} vs Efficiency {eff_pillar}")
         return "ABSTAIN", conflicts
     else:
         return "ABSTAIN", ["Low confluence across pillars"]

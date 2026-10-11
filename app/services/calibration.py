@@ -69,7 +69,7 @@ def compute_band_performance() -> Dict[str, Any]:
     for row in outcomes:
         band = row.get("final_confidence_band")
         if band not in bands:
-            band = "Low"
+            continue  # Fail-closed: exclude unclassified/None bands rather than corrupting Low band
 
         outcome = row.get("outcome", "").upper()
         bands[band]["total"] += 1
@@ -219,9 +219,11 @@ def compute_empirical_calibration() -> Dict[str, Any]:
     for o in all_outcomes:
         if o.get("outcome") in ["WIN", "LOSS"]:
             actual = 1.0 if o["outcome"] == "WIN" else 0.0
-            band = o.get("final_confidence_band") or "Low"
+            band = o.get("final_confidence_band")
+            if band not in empirical_probs:
+                continue
             # Use raw confidence if available, else band empirical
-            pred = float(o.get("final_confidence_raw") or empirical_probs.get(band, 0.5))
+            pred = float(o.get("final_confidence_raw") or empirical_probs[band])
             brier_terms.append((pred - actual) ** 2)
 
     brier_score = round(sum(brier_terms) / len(brier_terms), 4) if brier_terms else 0.0

@@ -110,7 +110,8 @@ def simulate_realistic_outcomes(n: int = 65, force_pass: bool = False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Jev v8 Forward Outcome Verifier")
     parser.add_argument("--status", action="store_true", help="Print current calibration status")
-    parser.add_argument("--simulate", type=int, default=0, help="Simulate N forward outcomes")
+    parser.add_argument("--simulate", type=int, default=0, help="Simulate N forward outcomes (requires --allow-synthetic)")
+    parser.add_argument("--allow-synthetic", action="store_true", help="Explicit safety acknowledgement for synthetic simulation")
     parser.add_argument("--force-pass", action="store_true", help="Force passing AC-10 gate for synthetic test harness")
     parser.add_argument("--force-fail", action="store_true", help="Force failing AC-10 gate for synthetic test harness")
     parser.add_argument("--reset-outcomes", action="store_true", help="Reset all verified outcomes to 0 for a clean data collection cycle")
@@ -122,6 +123,9 @@ if __name__ == "__main__":
         print(f"Reset {deleted} verified outcomes. Outcome table is now clean (0 outcomes).")
         print_calibration_status()
     elif args.simulate > 0:
+        if not args.allow_synthetic:
+            print("ERROR: Refusing to inject synthetic outcomes into database without explicit '--allow-synthetic' flag.")
+            sys.exit(1)
         force_p = True if args.force_pass else False
         if args.force_fail:
             force_p = False

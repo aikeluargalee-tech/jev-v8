@@ -153,11 +153,14 @@ class MarketService:
                 if fr_ts:
                     freshness_funding_s = max(0.0, fetch_start_ts - (fr_ts / 1000.0))
                 else:
-                    freshness_funding_s = 0.0
+                    # Fail-closed: missing exchange timestamp must be treated as stale, never 0.0s fresh
+                    freshness_funding_s = 999999.0
 
                 info_block = fr_info.get("info", {})
                 raw_oi = info_block.get("openInterest")
                 if raw_oi is not None:
+                    # In Kraken Futures BTC/USD:USD, raw openInterest is denominated in BTC base units.
+                    # Multiplying by spot price yields total USD notional open interest.
                     oi_val = float(raw_oi)
                     open_interest_usd = round(oi_val * price, 2) if price > 0 else round(oi_val, 2)
             except Exception as fe:
