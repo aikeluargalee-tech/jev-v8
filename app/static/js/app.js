@@ -60,17 +60,19 @@ function setupEventListeners() {
         runEvaluation();
     });
 
-    // 3b. On-Demand Cloud Trigger Button
+    // 3b. On-Demand Cloud Trigger Button (1-Click in Dashboard)
     const btnCloud = document.getElementById("btn-cloud-trigger");
     if (btnCloud) {
         btnCloud.addEventListener("click", () => {
-            const proceed = window.confirm(
-                "Trigger an on-demand cloud calculation?\n\n" +
-                "Click OK to open GitHub Actions in a new tab where you can click 'Run workflow' to immediately fetch 300+ Kraken candles and recalculate the decision card (~35s)."
-            );
-            if (proceed) {
-                window.open("https://github.com/aikeluargalee-tech/jev-v8/actions/workflows/collector.yml", "_blank", "noopener");
-            }
+            triggerOneClickCloudRun();
+        });
+    }
+
+    // 3c. Configure Cloud Token Button
+    const btnToken = document.getElementById("btn-config-token");
+    if (btnToken) {
+        btnToken.addEventListener("click", () => {
+            configureCloudToken();
         });
     }
 
@@ -531,5 +533,149 @@ function updateNextRefreshCountdown() {
     const el = document.getElementById("next-refresh-text");
     if (el) {
         el.textContent = `Next Cloud Run: in ${timeStr}`;
+    }
+}
+
+let isCloudRunActive = false;
+
+function configureCloudToken() {
+    const existing = localStorage.getItem("jev_gh_token") || "";
+    const promptMsg = existing
+        ? "🔑 Current GitHub Token is configured.\n\nPaste a new token to update, or clear the text and click OK to remove it:"
+        : "🔑 Configure 1-Click Cloud Token:\n\nPaste your GitHub Personal Access Token (classic with 'repo' scope or OAuth token).\nIt will be saved only in your browser's private local storage:";
+
+    const val = window.prompt(promptMsg, existing);
+    if (val === null) return;
+    if (val.trim() === "") {
+        localStorage.removeItem("jev_gh_token");
+        alert("Token removed. Cloud run will open GitHub Actions manually.");
+    } else {
+        localStorage.setItem("jev_gh_token", val.trim());
+        alert("✅ Token saved! You can now use 1-click cloud runs directly on this dashboard.");
+    }
+}
+
+async function triggerOneClickCloudRun() {
+    if (isCloudRunActive) return;
+
+    let token = localStorage.getItem("jev_gh_token");
+    if (!token || !token.trim()) {
+        const inputVal = window.prompt(
+            "⚡ 1-Click Cloud Run Setup:\n\n" +
+            "Paste your GitHub Token below to trigger cloud recalculations without leaving this dashboard.\n\n" +
+            "(Leave blank and click OK to open GitHub Actions page manually instead):",
+            ""
+        );
+        if (!inputVal || !inputVal.trim()) {
+            window.open("https://github.com/aikeluargalee-tech/jev-v8/actions/workflows/collector.yml", "_blank", "noopener");
+            return;
+        }
+        token = inputVal.trim();
+        localStorage.setItem("jev_gh_token", token);
+    }
+
+    const btnCloud = document.getElementById("btn-cloud-trigger");
+    const origHtml = btnCloud.innerHTML;
+
+    try {
+        isCloudRunActive = true;
+        btnCloud.disabled = true;
+        btnCloud.className = "cloud-trigger-btn running";
+        btnCloud.innerHTML = `<span>⚡ Requesting Cloud Run...</span>`;
+
+        const res = await fetch("https://api.github.com/repos/aikeluargalee-tech/jev-v8/actions/workflows/collector.yml/dispatches", {
+            method: "POST",
+            headers: {
+                "Authorization": `Bearer ${token}`,
+                "Accept": "application/vnd.github+json",
+                "Content-Type": "application/json"
+            },
+            body: JSON.stringify({ ref: "main" })
+        });
+
+        if (res.status === 204) {
+            let countdown = 38;
+            const initialTs = latestRecord?.ts_utc || "";
+
+            const timerInterval = setInterval(() => {
+                countdown--;
+                if (countdown > 0) {
+                    btnCloud.innerHTML = `<span>⚡ Crunching Cloud Data (${countdown}s)...</span>`;
+                } else {
+                    btnCloud.innerHTML = `<span>⏳ Finalizing analysis...</span>`;
+                }
+            }, 1000);
+
+            // Poll every 5s for the newly published packet
+            let pollAttempts = 0;
+            const maxPolls = 18; // Up to 90 seconds
+            const pollInterval = setInterval(async () => {
+                pollAttempts++;
+                try {
+                    const checkRes = await fetch("data/latest_decision.json?t=" + Date.now(), { cache: "no-store" });
+                    if (checkRes.ok) {
+                        const packet = await checkRes.json();
+                        const rec = packet.profiles ? packet.profiles[currentProfile] : packet;
+                        if (rec && rec.ts_utc && rec.ts_utc !== initialTs) {
+                            // Fresh packet confirmed!
+                            clearInterval(timerInterval);
+                            clearInterval(pollInterval);
+                            latestRecord = rec;
+                            renderRecord(rec);
+                            if (packet.updated_at_myt) {
+                                document.getElementById("freshness-text").textContent = `Cloud Updated: ${packet.updated_at_myt}`;
+                            }
+                            if (packet.calibration) {
+                                applyCalibrationReportData(packet.calibration);
+                            }
+                            updateLiveTickerPrice();
+                            btnCloud.className = "cloud-trigger-btn success";
+                            btnCloud.innerHTML = `<span>🎉 Fresh Analysis Ready!</span>`;
+                            setTimeout(() => {
+                                btnCloud.className = "cloud-trigger-btn";
+                                btnCloud.innerHTML = origHtml;
+                                btnCloud.disabled = false;
+                                isCloudRunActive = false;
+                            }, 4000);
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    // Ignore transient network glitch during polling
+                }
+
+                if (pollAttempts >= maxPolls) {
+                    clearInterval(timerInterval);
+                    clearInterval(pollInterval);
+                    btnCloud.className = "cloud-trigger-btn";
+                    btnCloud.innerHTML = origHtml;
+                    btnCloud.disabled = false;
+                    isCloudRunActive = false;
+                    alert("Cloud run is taking slightly longer. Click 'Refresh Data' in 30 seconds to view it.");
+                }
+            }, 5000);
+
+        } else if (res.status === 401 || res.status === 403) {
+            localStorage.removeItem("jev_gh_token");
+            alert("GitHub token was rejected (expired or missing permissions). Please click again to enter a valid token.");
+            btnCloud.className = "cloud-trigger-btn";
+            btnCloud.innerHTML = origHtml;
+            btnCloud.disabled = false;
+            isCloudRunActive = false;
+        } else {
+            const err = await res.json().catch(() => ({}));
+            alert(`GitHub dispatch error: ${err.message || res.statusText}`);
+            btnCloud.className = "cloud-trigger-btn";
+            btnCloud.innerHTML = origHtml;
+            btnCloud.disabled = false;
+            isCloudRunActive = false;
+        }
+
+    } catch (err) {
+        alert(`Error triggering cloud run: ${err.message}`);
+        btnCloud.className = "cloud-trigger-btn";
+        btnCloud.innerHTML = origHtml;
+        btnCloud.disabled = false;
+        isCloudRunActive = false;
     }
 }
