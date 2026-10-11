@@ -1,20 +1,20 @@
 {
   "dataset_summary": {
-    "total_recorded_verdicts": 145,
-    "shadow_mode_verdicts": 110,
+    "total_recorded_verdicts": 149,
+    "shadow_mode_verdicts": 111,
     "min_verdicts_threshold": 60,
     "calibration_dataset_ready": true,
     "confidence_band_distribution": {
       "High": 0,
       "Medium": 0,
-      "Low": 145,
+      "Low": 149,
       "None": 0
     },
     "verdict_distribution": {
-      "ABSTAIN": 145
+      "ABSTAIN": 149
     },
     "ac10_gate_status": "READY_FOR_PHASE_2_CALIBRATION",
-    "notes": "Logged 145 immutable records. Surpassed minimum 60 shadow verdicts threshold. Calibration dataset is successfully structured for Phase 2 forward outcome verification."
+    "notes": "Logged 149 immutable records. Surpassed minimum 60 shadow verdicts threshold. Calibration dataset is successfully structured for Phase 2 forward outcome verification."
   },
   "ac10_gate": {
     "gate": "AC-10",
