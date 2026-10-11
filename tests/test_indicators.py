@@ -139,7 +139,7 @@ def test_pillars_and_conflict_resolution():
 
 
 def test_levels_structure_and_atr():
-    # SWING profile: 2.5x ATR stop, 1.5R primary, 3.0R extended
+    # SWING profile: 2.5x ATR stop placed beyond structure, 1.5R primary, 3.0R extended
     entry = 80000.0
     atr_val = 1000.0
     swing_high = 85000.0
@@ -153,9 +153,14 @@ def test_levels_structure_and_atr():
     assert lvls["target_extended"] == 80000.0 + 3.0 * 2500.0  # 87,500.0
     assert "No order placed" in lvls["warning"]
 
-    # Stop inside structure -> has_valid_levels = False
-    lvls_inside = compute_levels(entry, atr_val, swing_high=85000.0, swing_low=75000.0, profile="SWING")
-    assert lvls_inside["has_valid_levels"] is False
+    # When swing_low is deep (75,000.0), stop is placed beyond structure low (75000 - 0.2*1000 = 74,800.0)
+    lvls_deep = compute_levels(entry, atr_val, swing_high=85000.0, swing_low=75000.0, profile="SWING")
+    assert lvls_deep["has_valid_levels"] is True
+    assert lvls_deep["stop"]["price"] == 74800.0
+    assert lvls_deep["stop"]["price"] < 75000.0
+
+    # Inverted structure (swing_high <= swing_low) -> has_valid_levels = False
+    assert compute_levels(entry, atr_val, swing_high=75000.0, swing_low=85000.0, profile="SWING")["has_valid_levels"] is False
 
     # DAY_CONTEXT profile: 1.5x ATR stop, strictly NO targets beyond session
     lvls_day = compute_levels(entry, atr_val, swing_high, swing_low, profile="DAY_CONTEXT")
@@ -361,24 +366,24 @@ def test_levels_short_and_abstain():
 
 
 def test_derivatives_hourly_funding_scale():
-    """Verify Kraken hourly funding rate classification with scale normalization."""
-    # Live Kraken rate: ~0.000066% hourly -> 8h rate ~ 0.000528% -> neutral
+    """Verify Kraken funding rate classification with standard 8h scale."""
+    # Live Kraken normalized 8h rate: 0.0005% -> neutral (-0.001% <= r <= 0.005%)
     state_live = compute_compact_state(
-        features={}, last_price=83000.0, funding_rate_pct=0.000066,
+        features={}, last_price=83000.0, funding_rate_pct=0.0005,
         social_meta={}, profile="SWING", ts_utc="2026-10-11T00:00:00Z"
     )
     assert state_live["derivatives_cat"]["funding_cat"] == "neutral"
 
-    # High hourly rate: 0.002% hourly -> 8h rate 0.016% (> 0.015%) -> positive
+    # High 8h rate: 0.008% (> 0.005%) -> positive
     state_high = compute_compact_state(
-        features={}, last_price=83000.0, funding_rate_pct=0.002,
+        features={}, last_price=83000.0, funding_rate_pct=0.008,
         social_meta={}, profile="SWING", ts_utc="2026-10-11T00:00:00Z"
     )
     assert state_high["derivatives_cat"]["funding_cat"] == "positive"
 
-    # Negative hourly rate: -0.0005% hourly -> 8h rate -0.004% (< -0.002%) -> negative
+    # Negative 8h rate: -0.002% (< -0.001%) -> negative
     state_neg = compute_compact_state(
-        features={}, last_price=83000.0, funding_rate_pct=-0.0005,
+        features={}, last_price=83000.0, funding_rate_pct=-0.002,
         social_meta={}, profile="SWING", ts_utc="2026-10-11T00:00:00Z"
     )
     assert state_neg["derivatives_cat"]["funding_cat"] == "negative"

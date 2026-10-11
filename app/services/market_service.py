@@ -59,11 +59,10 @@ def filter_closed_candles(raw_candles: List[List[float]], timeframe: str, now_ts
     """
     timeframe_seconds = TIMEFRAME_SECONDS.get(timeframe, 3600)
     closed = []
-    candidates = raw_candles[:-1] if raw_candles else []
-    for c in candidates:
+    for c in raw_candles or []:
         candle_open_ts = int(c[0] // 1000)
         candle_close_ts = candle_open_ts + timeframe_seconds
-        # Enforce closed candle: close_ts <= now_ts (candle_open_ts + timeframe_seconds <= now_ts)
+        # Enforce closed candle: close_ts <= now_ts (forming candles have close_ts > now_ts)
         if candle_close_ts <= now_ts:
             closed.append({
                 "time": candle_open_ts,
@@ -146,7 +145,9 @@ class MarketService:
                 fr_info = await futures_exchange.fetch_funding_rate(futures_pair)
                 raw_rate = fr_info.get("fundingRate")
                 if raw_rate is not None:
-                    funding_rate_pct = float(raw_rate) * 100.0
+                    # Kraken Futures raw funding rate is 1-hour interval ('interval': '1h').
+                    # Standardize to 8-hour rate (industry standard for perpetual funding percentage)
+                    funding_rate_pct = float(raw_rate) * 8.0 * 100.0
 
                 fr_ts = fr_info.get("timestamp")
                 if fr_ts:

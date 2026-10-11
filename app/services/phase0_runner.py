@@ -129,27 +129,29 @@ async def run_v8_evaluation(
         degraded_flags = fail_reasons
     else:
         final_verdict = det_verdict
-        # Confluence-driven deterministic confidence
-        bull = sum(1 for v in [pillars["technicals"], pillars["derivatives"], pillars["social"]] if v == "bullish")
-        bear = sum(1 for v in [pillars["technicals"], pillars["derivatives"], pillars["social"]] if v == "bearish")
-        align_count = max(bull, bear)
-
-        trade_action = jev_raw.get("TradeAction", {})
-        raw_conf = trade_action.get("confidence")
+        # Confluence-driven deterministic confidence across active pillars
+        active_pillars = [
+            pillars["technicals"],
+            pillars["derivatives"],
+            pillars.get("efficiency", "neutral")
+        ]
+        bull_active = sum(1 for v in active_pillars if v == "bullish")
+        bear_active = sum(1 for v in active_pillars if v == "bearish")
+        align_count = max(bull_active, bear_active)
 
         if final_verdict in ("BUY", "SELL"):
             if align_count >= 3:
                 confidence_band = "High"
-                raw_conf = raw_conf or 0.80
+                raw_conf = 0.80
             elif align_count == 2:
                 confidence_band = "Medium"
-                raw_conf = raw_conf or 0.65
+                raw_conf = 0.65
             else:
                 confidence_band = "Low"
-                raw_conf = raw_conf or 0.50
+                raw_conf = 0.45
         else:  # ABSTAIN
             confidence_band = "Low"
-            raw_conf = 0.50
+            raw_conf = 0.45
 
         reasons = det_conflicts if det_conflicts else [f"Pillars aligned: Technicals {pillars['technicals']}, Derivatives {pillars['derivatives']}, Social {pillars['social']}, Efficiency {pillars.get('efficiency', 'neutral')}"]
         degraded_flags = []

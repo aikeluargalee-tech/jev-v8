@@ -291,12 +291,11 @@ function renderRecord(rec) {
     // 1. Header & Freshness
     document.getElementById("freshness-text").textContent = `Freshness: ${market.freshness_market_s}s`;
     document.getElementById("market-price").textContent = `$${market.last_price.toLocaleString()}`;
-    const frHourly = market.funding_rate_pct !== undefined && market.funding_rate_pct !== null ? market.funding_rate_pct : null;
-    if (frHourly !== null) {
-        const fr8h = frHourly * 8;
+    const fr8h = market.funding_rate_pct !== undefined && market.funding_rate_pct !== null ? market.funding_rate_pct : null;
+    if (fr8h !== null) {
         const sign = fr8h >= 0 ? "+" : "";
         document.getElementById("funding-rate").textContent = `${sign}${fr8h.toFixed(4)}% (8h)`;
-        document.getElementById("funding-rate").title = `Kraken 1h: ${frHourly.toFixed(6)}% | Annualized APR: ${(frHourly * 24 * 365).toFixed(2)}%`;
+        document.getElementById("funding-rate").title = `Kraken 8h: ${fr8h.toFixed(6)}% | Annualized APR: ${(fr8h * 3 * 365).toFixed(2)}%`;
     } else {
         document.getElementById("funding-rate").textContent = "Unavailable";
     }
@@ -680,17 +679,19 @@ function renderReasonsAndExplanations(rec) {
             macroText = `<li><strong>1-Day Macro Trend (Neutral Pullback):</strong> Bitcoin is trading below its 20-day moving average (${e20}). The macro bull market is taking a breather in consolidation.</li>`;
         } else if (features.macro_trend === "bullish") {
             macroText = `<li><strong>1-Day Macro Trend (Bullish Expansion):</strong> Price is cleanly above its 20, 50, and 200-day moving averages. Higher timeframe momentum is strongly upwards.</li>`;
-        } else {
+        } else if (features.macro_trend === "bearish") {
             macroText = `<li><strong>1-Day Macro Trend (Bearish Downtrend):</strong> Price is below long-term moving averages. Higher timeframes favor sellers.</li>`;
+        } else {
+            macroText = `<li><strong>1-Day Macro Trend (Stabilizing / Calculating):</strong> Daily timeframe trend indicators are currently stabilizing or calculating.</li>`;
         }
     }
 
     // 4. Futures & Derivatives
-    const frHourly = market.funding_rate_pct !== undefined && market.funding_rate_pct !== null ? market.funding_rate_pct : null;
+    const fr8hVal = market.funding_rate_pct !== undefined && market.funding_rate_pct !== null ? market.funding_rate_pct : null;
     const oi = market.open_interest_usd ? `$${(market.open_interest_usd / 1e6).toFixed(1)}M` : "";
-    if (frHourly !== null) {
-        const fr8h = (frHourly * 8).toFixed(4);
-        derivText = `<li><strong>Futures & Derivatives:</strong> Funding rate is near zero (<strong>+${fr8h}% 8h</strong>) with <strong>${oi}</strong> open interest. Perpetual traders are balanced—no short-squeeze or long-liquidation panic.</li>`;
+    if (fr8hVal !== null) {
+        const sign = fr8hVal >= 0 ? "+" : "";
+        derivText = `<li><strong>Futures & Derivatives:</strong> Funding rate is near zero (<strong>${sign}${fr8hVal.toFixed(4)}% 8h</strong>) with <strong>${oi}</strong> open interest. Perpetual traders are balanced—no short-squeeze or long-liquidation panic.</li>`;
     }
 
     reasonsBox.innerHTML = `
@@ -852,7 +853,7 @@ function configureCloudToken() {
         ? "🔑 Current GitHub Token is configured for this session.\n\nPaste a new token to update, or clear the text and click OK to remove it:"
         : "🔑 Configure 1-Click Cloud Token:\n\nPaste your GitHub Personal Access Token (classic with 'repo' scope or OAuth token).\nSecurity note: For protection, the token is kept in memory/sessionStorage only and is purged when you close this browser tab:";
 
-    const val = window.prompt(promptMsg, existing);
+    const val = window.prompt(promptMsg, "");
     if (val === null) return;
     if (val.trim() === "") {
         removeCloudToken();

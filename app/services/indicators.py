@@ -192,10 +192,10 @@ def compute_macro_trend(candles_1d: List[Dict[str, Any]]) -> Dict[str, Any]:
             macro_trend = "bearish"
         else:
             macro_trend = "neutral"
-    elif ema200_val is not None:
-        if last_close > ema200_val and (ema50_val is None or last_close > ema50_val):
+    elif ema50_val is not None and ema20_val is not None:
+        if last_close > ema20_val and ema20_val > ema50_val:
             macro_trend = "bullish"
-        elif last_close < ema200_val and (ema50_val is None or last_close < ema50_val):
+        elif last_close < ema20_val and ema20_val < ema50_val:
             macro_trend = "bearish"
         else:
             macro_trend = "neutral"
@@ -412,19 +412,15 @@ def compute_compact_state(
     else:
         vol_regime = "normal"
 
-    # Derivatives funding category
+    # Derivatives funding category (calibrated for standard 8-hour funding rate percentage)
     if funding_rate_pct is None:
         funding_cat = "unavailable"
+    elif funding_rate_pct > 0.005:
+        funding_cat = "positive"
+    elif funding_rate_pct < -0.001:
+        funding_cat = "negative"
     else:
-        # Kraken Futures reports an hourly rate ('interval': '1h').
-        # If rate magnitude < 0.005%, scale to standard 8-hour rate (industry standard for funding rate thresholds).
-        fr_8h = funding_rate_pct * 8.0 if abs(funding_rate_pct) < 0.005 else funding_rate_pct
-        if fr_8h < -0.002:
-            funding_cat = "negative"
-        elif fr_8h > 0.015:
-            funding_cat = "positive"
-        else:
-            funding_cat = "neutral"
+        funding_cat = "neutral"
 
     return {
         "profile": profile,
@@ -579,19 +575,26 @@ def compute_levels(
 
     if profile == "SWING":
         atr_mult_stop = 2.5
+        if swing_high <= swing_low:
+            return {"has_valid_levels": False}
+
         if is_buy:
-            stop_price = entry_price - atr_mult_stop * atr14
-            if swing_low < stop_price < swing_high:
-                return {"has_valid_levels": False}
+            raw_atr_stop = entry_price - atr_mult_stop * atr14
+            # Place stop beyond structure low (below swing_low)
+            stop_price = min(raw_atr_stop, swing_low - 0.2 * atr14)
             risk = entry_price - stop_price
+            if stop_price <= 0 or risk <= 0:
+                return {"has_valid_levels": False}
             target_primary = entry_price + 1.5 * risk
             target_extended = entry_price + 3.0 * risk
             invalidation = f"4h close < {round(swing_low, 1)}"
         else:  # SELL (Short)
-            stop_price = entry_price + atr_mult_stop * atr14
-            if swing_low < stop_price < swing_high:
-                return {"has_valid_levels": False}
+            raw_atr_stop = entry_price + atr_mult_stop * atr14
+            # Place stop beyond structure high (above swing_high)
+            stop_price = max(raw_atr_stop, swing_high + 0.2 * atr14)
             risk = stop_price - entry_price
+            if risk <= 0:
+                return {"has_valid_levels": False}
             target_primary = entry_price - 1.5 * risk
             target_extended = entry_price - 3.0 * risk
             invalidation = f"4h close > {round(swing_high, 1)}"
