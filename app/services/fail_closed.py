@@ -60,6 +60,19 @@ def check_fail_closed(snap: MarketSnapshot) -> Tuple[bool, List[str]]:
     if snap.freshness_funding_s > thresh["funding_s"]:
         fails.append(f"Funding stale {snap.freshness_funding_s:.1f}s > {thresh['funding_s']}s")
 
+    # 2.1 Candle data staleness check (verifies exchange feed is active and not frozen)
+    if snap.last_candle_close_ts:
+        now_utc = datetime.datetime.now(datetime.timezone.utc)
+        c_ts = snap.last_candle_close_ts
+        if c_ts.tzinfo is None:
+            c_ts = c_ts.replace(tzinfo=datetime.timezone.utc)
+        candle_age_s = max(0.0, (now_utc - c_ts).total_seconds())
+        # SWING: 4h candle = 14,400s. Max allowed tolerance = 4.5h (16,200s)
+        # DAY_CONTEXT: 15m candle = 900s. Max allowed tolerance = 25m (1,500s)
+        max_candle_age_s = 16200.0 if profile == "SWING" else 1500.0
+        if candle_age_s > max_candle_age_s:
+            fails.append(f"Primary candle stale: {candle_age_s:.0f}s > {max_candle_age_s:.0f}s (exchange feed frozen)")
+
     # 3. Warmup sufficiency check
     req = WARMUP[profile]
     if snap.candle_count_4h < req["4h"]:

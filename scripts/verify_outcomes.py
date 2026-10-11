@@ -50,10 +50,10 @@ def print_calibration_status():
     print("="*60 + "\n")
 
 
-def simulate_realistic_outcomes(n: int = 65, force_pass: bool = True):
+def simulate_realistic_outcomes(n: int = 65, force_pass: bool = False):
     """
     Populates forward outcomes for historical verdicts to test AC-10 gate.
-    If force_pass=True, ensures High band win rate > Low band win rate.
+    Defaults to force_pass=False for unbiased outcome verification.
     """
     import random
     rows = verdicts_db.get_recent_verdicts(n)
@@ -66,13 +66,13 @@ def simulate_realistic_outcomes(n: int = 65, force_pass: bool = True):
         price = float(r["last_price"])
 
         if band == "High":
-            # High band has 75% win rate if force_pass, else 35%
-            win_prob = 0.75 if force_pass else 0.35
+            # High band has 75% win rate if force_pass, else 45%
+            win_prob = 0.75 if force_pass else 0.45
         elif band == "Medium":
-            win_prob = 0.55
+            win_prob = 0.55 if force_pass else 0.40
         else:
-            # Low band has 40% win rate if force_pass, else 60%
-            win_prob = 0.40 if force_pass else 0.60
+            # Low band has 40% win rate if force_pass, else 35%
+            win_prob = 0.40 if force_pass else 0.35
 
         if r["final_verdict"] == "ABSTAIN":
             outcome = "ABSTAIN_OBSERVED"
@@ -111,7 +111,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Jev v8 Forward Outcome Verifier")
     parser.add_argument("--status", action="store_true", help="Print current calibration status")
     parser.add_argument("--simulate", type=int, default=0, help="Simulate N forward outcomes")
-    parser.add_argument("--force-fail", action="store_true", help="Simulate failing AC-10 gate")
+    parser.add_argument("--force-pass", action="store_true", help="Force passing AC-10 gate for synthetic test harness")
+    parser.add_argument("--force-fail", action="store_true", help="Force failing AC-10 gate for synthetic test harness")
     parser.add_argument("--reset-outcomes", action="store_true", help="Reset all verified outcomes to 0 for a clean data collection cycle")
 
     args = parser.parse_args()
@@ -121,6 +122,9 @@ if __name__ == "__main__":
         print(f"Reset {deleted} verified outcomes. Outcome table is now clean (0 outcomes).")
         print_calibration_status()
     elif args.simulate > 0:
-        simulate_realistic_outcomes(n=args.simulate, force_pass=not args.force_fail)
+        force_p = True if args.force_pass else False
+        if args.force_fail:
+            force_p = False
+        simulate_realistic_outcomes(n=args.simulate, force_pass=force_p)
     else:
         print_calibration_status()

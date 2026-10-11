@@ -204,9 +204,9 @@ def compute_macro_trend(candles_1d: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     return {
         "macro_trend": macro_trend,
-        "ema20_1d": round(ema20_val, 2) if ema20_val else None,
-        "ema50_1d": round(ema50_val, 2) if ema50_val else None,
-        "ema200_1d": round(ema200_val, 2) if ema200_val else None,
+        "ema20_1d": round(ema20_val, 2) if ema20_val is not None else None,
+        "ema50_1d": round(ema50_val, 2) if ema50_val is not None else None,
+        "ema200_1d": round(ema200_val, 2) if ema200_val is not None else None,
         "last_close_1d": round(last_close, 2)
     }
 
@@ -332,12 +332,12 @@ def compute_features(candles: List[Dict[str, Any]], profile: str = "SWING") -> D
     swing_low = min(lows[-recent_window:]) if recent_window > 0 else closes[-1]
 
     return {
-        "ema20": round(ema20_val, 2) if ema20_val else None,
-        "ema50": round(ema50_val, 2) if ema50_val else None,
-        "ema200": round(ema200_val, 2) if ema200_val else None,
-        "rsi14": round(rsi14_val, 2) if rsi14_val else None,
+        "ema20": round(ema20_val, 2) if ema20_val is not None else None,
+        "ema50": round(ema50_val, 2) if ema50_val is not None else None,
+        "ema200": round(ema200_val, 2) if ema200_val is not None else None,
+        "rsi14": round(rsi14_val, 2) if rsi14_val is not None else None,
         "rsi_dir": rsi_dir,
-        "atr14": round(atr14_val, 2) if atr14_val else None,
+        "atr14": round(atr14_val, 2) if atr14_val is not None else None,
         "atr_pct": atr_pct,
         "vol_z": vol_z,
         "cvd_24h": cvd_val,
@@ -415,12 +415,16 @@ def compute_compact_state(
     # Derivatives funding category
     if funding_rate_pct is None:
         funding_cat = "unavailable"
-    elif funding_rate_pct < -0.002:
-        funding_cat = "negative"
-    elif funding_rate_pct > 0.015:
-        funding_cat = "positive"
     else:
-        funding_cat = "neutral"
+        # Kraken Futures reports an hourly rate ('interval': '1h').
+        # If rate magnitude < 0.005%, scale to standard 8-hour rate (industry standard for funding rate thresholds).
+        fr_8h = funding_rate_pct * 8.0 if abs(funding_rate_pct) < 0.005 else funding_rate_pct
+        if fr_8h < -0.002:
+            funding_cat = "negative"
+        elif fr_8h > 0.015:
+            funding_cat = "positive"
+        else:
+            funding_cat = "neutral"
 
     return {
         "profile": profile,
@@ -555,27 +559,42 @@ def compute_levels(
     atr14: Optional[float],
     swing_high: float,
     swing_low: float,
-    profile: str = "SWING"
+    profile: str = "SWING",
+    verdict: str = "BUY"
 ) -> Dict[str, Any]:
     """
     Structure + ATR decision levels.
     SWING: 2.5x ATR stops beyond structure, 1.5R primary target, 3R extended target.
     DAY_CONTEXT: 1.5x ATR stops, strictly NO targets beyond session.
     Copy constraint (AC-08): strictly one number per field with label.
+    Levels are strictly suppressed on ABSTAIN or NO_VERDICT.
     """
+    if verdict not in ("BUY", "SELL"):
+        return {"has_valid_levels": False, "reason": f"Levels suppressed on {verdict}"}
+
     if atr14 is None or atr14 <= 0 or entry_price <= 0:
         return {"has_valid_levels": False}
 
+    is_buy = (verdict == "BUY")
+
     if profile == "SWING":
         atr_mult_stop = 2.5
-        stop_price = entry_price - atr_mult_stop * atr14 if entry_price > swing_low else entry_price + atr_mult_stop * atr14
-        risk = abs(entry_price - stop_price)
-        target_primary = entry_price + 1.5 * risk
-        target_extended = entry_price + 3.0 * risk
-
-        # Structure sanity check: stop must not be inside structure
-        if swing_low < stop_price < swing_high:
-            return {"has_valid_levels": False}
+        if is_buy:
+            stop_price = entry_price - atr_mult_stop * atr14
+            if swing_low < stop_price < swing_high:
+                return {"has_valid_levels": False}
+            risk = entry_price - stop_price
+            target_primary = entry_price + 1.5 * risk
+            target_extended = entry_price + 3.0 * risk
+            invalidation = f"4h close < {round(swing_low, 1)}"
+        else:  # SELL (Short)
+            stop_price = entry_price + atr_mult_stop * atr14
+            if swing_low < stop_price < swing_high:
+                return {"has_valid_levels": False}
+            risk = stop_price - entry_price
+            target_primary = entry_price - 1.5 * risk
+            target_extended = entry_price - 3.0 * risk
+            invalidation = f"4h close > {round(swing_high, 1)}"
 
         stop_pct = round((abs(entry_price - stop_price) / entry_price) * 100.0, 2)
         return {
@@ -590,12 +609,18 @@ def compute_levels(
             "target_extended": round(target_extended, 1),
             "method": "structure+ATR 2.5x",
             "expiry_ts": None,
-            "invalidation": f"4h close < {round(swing_low, 1)}",
+            "invalidation": invalidation,
             "warning": "No order placed. Not an active stop. App does not monitor or execute."
         }
     else:  # DAY_CONTEXT
         atr_mult_stop = 1.5
-        stop_price = entry_price - atr_mult_stop * atr14
+        if is_buy:
+            stop_price = entry_price - atr_mult_stop * atr14
+            invalidation = f"15m close < {round(stop_price, 1)}"
+        else:
+            stop_price = entry_price + atr_mult_stop * atr14
+            invalidation = f"15m close > {round(stop_price, 1)}"
+
         stop_pct = round((abs(entry_price - stop_price) / entry_price) * 100.0, 2)
         return {
             "has_valid_levels": True,
@@ -609,6 +634,6 @@ def compute_levels(
             "target_extended": None,
             "method": "ATR 1.5x intraday context only",
             "expiry_ts": None,
-            "invalidation": f"15m close < {round(stop_price, 1)}",
+            "invalidation": invalidation,
             "warning": "No order placed. Intraday context only."
         }

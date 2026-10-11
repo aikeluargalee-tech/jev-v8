@@ -129,24 +129,39 @@ async def run_v8_evaluation(
         degraded_flags = fail_reasons
     else:
         final_verdict = det_verdict
+        # Confluence-driven deterministic confidence
+        bull = sum(1 for v in [pillars["technicals"], pillars["derivatives"], pillars["social"]] if v == "bullish")
+        bear = sum(1 for v in [pillars["technicals"], pillars["derivatives"], pillars["social"]] if v == "bearish")
+        align_count = max(bull, bear)
+
         trade_action = jev_raw.get("TradeAction", {})
-        raw_conf = trade_action.get("confidence", 0.55)
-        if raw_conf >= 0.70:
-            confidence_band = "High"
-        elif raw_conf >= 0.58:
-            confidence_band = "Medium"
-        else:
+        raw_conf = trade_action.get("confidence")
+
+        if final_verdict in ("BUY", "SELL"):
+            if align_count >= 3:
+                confidence_band = "High"
+                raw_conf = raw_conf or 0.80
+            elif align_count == 2:
+                confidence_band = "Medium"
+                raw_conf = raw_conf or 0.65
+            else:
+                confidence_band = "Low"
+                raw_conf = raw_conf or 0.50
+        else:  # ABSTAIN
             confidence_band = "Low"
+            raw_conf = 0.50
+
         reasons = det_conflicts if det_conflicts else [f"Pillars aligned: Technicals {pillars['technicals']}, Derivatives {pillars['derivatives']}, Social {pillars['social']}, Efficiency {pillars.get('efficiency', 'neutral')}"]
         degraded_flags = []
 
-    # 11. Compute Structure + ATR Levels
+    # 11. Compute Structure + ATR Levels (Strictly suppressed on ABSTAIN)
     levels_data = compute_levels(
         entry_price=snap.last_price,
         atr14=features.get("atr14"),
         swing_high=features.get("swing_high", snap.last_price * 1.05),
         swing_low=features.get("swing_low", snap.last_price * 0.95),
-        profile=profile
+        profile=profile,
+        verdict=final_verdict
     )
 
     # 12. Construct complete v8_verdict_log record

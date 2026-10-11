@@ -459,7 +459,15 @@ function renderRecord(rec) {
             tileBadgeMacro.className = `tile-badge ${mac === 'BULLISH' ? 'badge-bull' : (mac === 'BEARISH' ? 'badge-bear' : 'badge-neutral')}`;
         }
         if (tileFootMacro) {
-            tileFootMacro.textContent = features.macro_trend === 'neutral' ? "Pullback / Range Consolidation" : (features.macro_trend === 'bullish' ? "Bullish Trend Expansion" : "Bearish Trend Expansion");
+            if (features.macro_trend === 'bullish') {
+                tileFootMacro.textContent = "Bullish Trend Expansion";
+            } else if (features.macro_trend === 'bearish') {
+                tileFootMacro.textContent = "Bearish Trend Expansion";
+            } else if (features.macro_trend === 'neutral') {
+                tileFootMacro.textContent = "Pullback / Range Consolidation";
+            } else {
+                tileFootMacro.textContent = "Macro Trend Calculating / Unknown";
+            }
         }
     }
 
@@ -824,31 +832,46 @@ function updateNextRefreshCountdown() {
 
 let isCloudRunActive = false;
 
+function getCloudToken() {
+    return sessionStorage.getItem("jev_gh_token") || localStorage.getItem("jev_gh_token") || "";
+}
+
+function setCloudToken(val) {
+    sessionStorage.setItem("jev_gh_token", val);
+    localStorage.removeItem("jev_gh_token"); // Clean up old persistent storage
+}
+
+function removeCloudToken() {
+    sessionStorage.removeItem("jev_gh_token");
+    localStorage.removeItem("jev_gh_token");
+}
+
 function configureCloudToken() {
-    const existing = localStorage.getItem("jev_gh_token") || "";
+    const existing = getCloudToken();
     const promptMsg = existing
-        ? "🔑 Current GitHub Token is configured.\n\nPaste a new token to update, or clear the text and click OK to remove it:"
-        : "🔑 Configure 1-Click Cloud Token:\n\nPaste your GitHub Personal Access Token (classic with 'repo' scope or OAuth token).\nIt will be saved only in your browser's private local storage:";
+        ? "🔑 Current GitHub Token is configured for this session.\n\nPaste a new token to update, or clear the text and click OK to remove it:"
+        : "🔑 Configure 1-Click Cloud Token:\n\nPaste your GitHub Personal Access Token (classic with 'repo' scope or OAuth token).\nSecurity note: For protection, the token is kept in memory/sessionStorage only and is purged when you close this browser tab:";
 
     const val = window.prompt(promptMsg, existing);
     if (val === null) return;
     if (val.trim() === "") {
-        localStorage.removeItem("jev_gh_token");
+        removeCloudToken();
         alert("Token removed. Cloud run will open GitHub Actions manually.");
     } else {
-        localStorage.setItem("jev_gh_token", val.trim());
-        alert("✅ Token saved! You can now use 1-click cloud runs directly on this dashboard.");
+        setCloudToken(val.trim());
+        alert("✅ Token saved for this browser session! 1-click cloud runs are now active.");
     }
 }
 
 async function triggerOneClickCloudRun() {
     if (isCloudRunActive) return;
 
-    let token = localStorage.getItem("jev_gh_token");
+    let token = getCloudToken();
     if (!token || !token.trim()) {
         const inputVal = window.prompt(
             "⚡ 1-Click Cloud Run Setup:\n\n" +
-            "Paste your GitHub Token below to trigger cloud recalculations without leaving this dashboard.\n\n" +
+            "Paste your GitHub Token below to trigger cloud recalculations without leaving this dashboard.\n" +
+            "(Security: Saved only in this active browser session).\n\n" +
             "(Leave blank and click OK to open GitHub Actions page manually instead):",
             ""
         );
@@ -857,7 +880,7 @@ async function triggerOneClickCloudRun() {
             return;
         }
         token = inputVal.trim();
-        localStorage.setItem("jev_gh_token", token);
+        setCloudToken(token);
     }
 
     const btnCloud = document.getElementById("btn-cloud-trigger");

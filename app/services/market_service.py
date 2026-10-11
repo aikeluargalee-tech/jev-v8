@@ -106,6 +106,7 @@ class MarketService:
             # 1. Fetch Spot Ticker
             ticker = await exchange.fetch_ticker(pair)
             price = float(ticker.get("last") or ticker.get("close") or 0.0)
+            ticker_ts = ticker.get("timestamp")
 
             # 2. Fetch Multi-Timeframe OHLCV Candles with full warmup
             if profile == "SWING":
@@ -117,7 +118,7 @@ class MarketService:
                 raw_15m = await exchange.fetch_ohlcv(pair, timeframe="15m", limit=350)
                 raw_1h = await exchange.fetch_ohlcv(pair, timeframe="1h", limit=300)
                 raw_4h = await exchange.fetch_ohlcv(pair, timeframe="4h", limit=300)
-                raw_1d = []
+                raw_1d = await exchange.fetch_ohlcv(pair, timeframe="1d", limit=300)
 
             # Filter closed candles only
             candles_4h = filter_closed_candles(raw_4h, "4h", fetch_start_ts)
@@ -163,8 +164,9 @@ class MarketService:
                 freshness_funding_s = 999999.0
 
             fetch_end_ts = time.time()
+            ticker_age_s = max(0.0, fetch_end_ts - (ticker_ts / 1000.0)) if ticker_ts else (fetch_end_ts - fetch_start_ts)
             # Freshness of the captured market quote at the conclusion of fetch
-            freshness_market_s = round(fetch_end_ts - fetch_start_ts, 2)
+            freshness_market_s = round(max(ticker_age_s, fetch_end_ts - fetch_start_ts), 2)
 
             snapshot = MarketSnapshot(
                 venue=PRIMARY_VENUE,

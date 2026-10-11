@@ -323,3 +323,64 @@ def test_daily_macro_trend_alignment_veto():
     )
     assert verdict_pass == "BUY"
 
+
+def test_rsi_zero_preservation():
+    """Verify that RSI=0.0 is preserved as 0.0 and not demoted to None by falsy checks."""
+    from app.services.indicators import compute_features
+    # Constant dropping price sequence will produce RSI = 0.0
+    dropping_candles = [
+        {"high": 100.0 - i, "low": 99.0 - i, "close": 99.0 - i, "volume": 100.0}
+        for i in range(50)
+    ]
+    feat = compute_features(dropping_candles)
+    assert feat["rsi14"] is not None
+    assert feat["rsi14"] == 0.0
+
+
+def test_levels_short_and_abstain():
+    """Verify Short setup (SELL) and ABSTAIN level suppression."""
+    entry = 80000.0
+    atr_val = 1000.0
+    swing_high = 82000.0  # Stop at 82500 is beyond swing high (82000) -> Valid structure
+    swing_low = 75000.0
+
+    # 1. Short setup on SELL
+    lvls_sell = compute_levels(entry, atr_val, swing_high, swing_low, profile="SWING", verdict="SELL")
+    assert lvls_sell["has_valid_levels"] is True
+    assert lvls_sell["stop"]["price"] == 80000.0 + 2.5 * 1000.0  # 82,500.0 (above entry)
+    assert lvls_sell["target_primary"] == 80000.0 - 1.5 * 2500.0  # 76,250.0 (below entry)
+    assert lvls_sell["target_extended"] == 80000.0 - 3.0 * 2500.0  # 72,500.0 (below entry)
+    assert "4h close > 82000.0" in lvls_sell["invalidation"]
+
+    # 2. ABSTAIN suppresses levels on SWING and DAY_CONTEXT
+    lvls_abstain_swing = compute_levels(entry, atr_val, swing_high, swing_low, profile="SWING", verdict="ABSTAIN")
+    assert lvls_abstain_swing["has_valid_levels"] is False
+
+    lvls_abstain_day = compute_levels(entry, atr_val, swing_high, swing_low, profile="DAY_CONTEXT", verdict="ABSTAIN")
+    assert lvls_abstain_day["has_valid_levels"] is False
+
+
+def test_derivatives_hourly_funding_scale():
+    """Verify Kraken hourly funding rate classification with scale normalization."""
+    # Live Kraken rate: ~0.000066% hourly -> 8h rate ~ 0.000528% -> neutral
+    state_live = compute_compact_state(
+        features={}, last_price=83000.0, funding_rate_pct=0.000066,
+        social_meta={}, profile="SWING", ts_utc="2026-10-11T00:00:00Z"
+    )
+    assert state_live["derivatives_cat"]["funding_cat"] == "neutral"
+
+    # High hourly rate: 0.002% hourly -> 8h rate 0.016% (> 0.015%) -> positive
+    state_high = compute_compact_state(
+        features={}, last_price=83000.0, funding_rate_pct=0.002,
+        social_meta={}, profile="SWING", ts_utc="2026-10-11T00:00:00Z"
+    )
+    assert state_high["derivatives_cat"]["funding_cat"] == "positive"
+
+    # Negative hourly rate: -0.0005% hourly -> 8h rate -0.004% (< -0.002%) -> negative
+    state_neg = compute_compact_state(
+        features={}, last_price=83000.0, funding_rate_pct=-0.0005,
+        social_meta={}, profile="SWING", ts_utc="2026-10-11T00:00:00Z"
+    )
+    assert state_neg["derivatives_cat"]["funding_cat"] == "negative"
+
+
