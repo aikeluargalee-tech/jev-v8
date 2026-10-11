@@ -13,6 +13,10 @@ async function initApp() {
     await fetchSystemStatus();
     // Run initial evaluation on startup
     await runEvaluation();
+
+    // Auto-refresh: Poll live ticker price every 15s, and check for fresh decision packets every 5 minutes
+    setInterval(updateLiveTickerPrice, 15000);
+    setInterval(loadStaticPacket, 300000);
 }
 
 function setupEventListeners() {
