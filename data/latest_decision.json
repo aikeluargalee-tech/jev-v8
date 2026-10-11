@@ -1,24 +1,24 @@
 {
-  "updated_at_utc": "2026-10-11T02:44:19.789354+00:00",
-  "updated_at_myt": "2026-10-11 10:44:19 MYT",
+  "updated_at_utc": "2026-10-11T03:07:26.266068+00:00",
+  "updated_at_myt": "2026-10-11 11:07:26 MYT",
   "symbol": "BTC",
   "venue": "kraken",
   "pair": "BTC/USD",
   "profiles": {
     "SWING": {
-      "run_id": "9bd16f1a-cf00-4b8b-8610-ae82db3dfcf8",
-      "ts_utc": "2026-10-11T02:44:00.215568+00:00",
-      "ts_local_myt": "2026-10-11 10:44:00 MYT",
+      "run_id": "d9e7cf73-3009-4106-b009-a75f3c5c8f4c",
+      "ts_utc": "2026-10-11T03:07:11.597623+00:00",
+      "ts_local_myt": "2026-10-11 11:07:11 MYT",
       "profile": "SWING",
       "rule_ver": "v8.0",
       "shadow_mode": false,
       "market": {
         "venue": "kraken",
         "pair": "BTC/USD",
-        "last_price": 83066.5,
+        "last_price": 82962.3,
         "last_candle_close_ts": "2026-10-11T00:00:00+00:00",
-        "freshness_market_s": 9.31,
-        "freshness_funding_s": 4.28,
+        "freshness_market_s": 6.85,
+        "freshness_funding_s": 18.87,
         "is_fallback": false,
         "is_synthetic": false
       },
@@ -35,7 +35,7 @@
       "categorical": {
         "profile": "SWING",
         "rule_ver": "v8.0",
-        "ts_utc": "2026-10-11T02:44:00.215568+00:00",
+        "ts_utc": "2026-10-11T03:07:11.597623+00:00",
         "market_cat": {
           "ema_stack": "mixed",
           "ema200_pos": "above",
@@ -106,43 +106,43 @@
       }
     },
     "DAY_CONTEXT": {
-      "run_id": "2e7b21e4-eb1a-442e-ba08-62b444ac89d1",
-      "ts_utc": "2026-10-11T02:44:10.068424+00:00",
-      "ts_local_myt": "2026-10-11 10:44:10 MYT",
+      "run_id": "a0af77a1-8217-4b21-ad41-39b196399576",
+      "ts_utc": "2026-10-11T03:07:18.958340+00:00",
+      "ts_local_myt": "2026-10-11 11:07:18 MYT",
       "profile": "DAY_CONTEXT",
       "rule_ver": "v8.0",
       "shadow_mode": false,
       "market": {
         "venue": "kraken",
         "pair": "BTC/USD",
-        "last_price": 83066.5,
-        "last_candle_close_ts": "2026-10-11T02:30:00+00:00",
-        "freshness_market_s": 9.17,
-        "freshness_funding_s": 0.0,
+        "last_price": 82962.3,
+        "last_candle_close_ts": "2026-10-11T03:00:00+00:00",
+        "freshness_market_s": 6.79,
+        "freshness_funding_s": 26.24,
         "is_fallback": false,
         "is_synthetic": false
       },
       "features": {
-        "ema20": 82945.69,
-        "ema50": 82917.4,
-        "ema200": 82750.65,
-        "rsi14": 53.03,
-        "atr14": 47.73,
+        "ema20": 82959.37,
+        "ema50": 82925.39,
+        "ema200": 82753.29,
+        "rsi14": 58.02,
+        "atr14": 50.65,
         "atr_pct": 0.06,
-        "vol_z": 2.39,
-        "cvd_24h": -22.19
+        "vol_z": -0.72,
+        "cvd_24h": -17.27
       },
       "categorical": {
         "profile": "DAY_CONTEXT",
         "rule_ver": "v8.0",
-        "ts_utc": "2026-10-11T02:44:10.068424+00:00",
+        "ts_utc": "2026-10-11T03:07:18.958340+00:00",
         "market_cat": {
           "ema_stack": "bullish",
           "ema200_pos": "above",
-          "rsi_cat": "neutral",
+          "rsi_cat": "neutral_high",
           "rsi_dir": "falling",
-          "vol_regime": "high",
-          "vol_z": 2.39,
+          "vol_regime": "normal",
+          "vol_z": -0.72,
           "cvd_trend": "neutral"
         },
         "derivatives_cat": {
@@ -178,7 +178,7 @@
       },
       "deterministic": {
         "pillars": {
-          "technicals": "bullish",
+          "technicals": "weak",
           "derivatives": "neutral",
           "social": "neutral"
         },
@@ -198,11 +198,11 @@
       "levels": {
         "has_valid_levels": true,
         "entry_zone": [
-          82983.4,
-          83149.6
+          82879.3,
+          83045.3
         ],
         "stop": {
-          "price": 82994.9,
+          "price": 82886.3,
           "pct": 0.09,
           "atr_multiple": 1.5
         },
@@ -210,7 +210,7 @@
         "target_extended": null,
         "method": "ATR 1.5x intraday context only",
         "expiry_ts": null,
-        "invalidation": "15m close < 82994.9",
+        "invalidation": "15m close < 82886.3",
         "warning": "No order placed. Intraday context only."
       },
       "cost": {
@@ -223,21 +223,21 @@
   },
   "calibration": {
     "dataset_summary": {
-      "total_recorded_verdicts": 133,
-      "shadow_mode_verdicts": 106,
+      "total_recorded_verdicts": 137,
+      "shadow_mode_verdicts": 107,
       "min_verdicts_threshold": 60,
       "calibration_dataset_ready": true,
       "confidence_band_distribution": {
         "High": 0,
         "Medium": 0,
-        "Low": 133,
+        "Low": 137,
         "None": 0
       },
       "verdict_distribution": {
-        "ABSTAIN": 133
+        "ABSTAIN": 137
       },
       "ac10_gate_status": "READY_FOR_PHASE_2_CALIBRATION",
-      "notes": "Logged 133 immutable records. Surpassed minimum 60 shadow verdicts threshold. Calibration dataset is successfully structured for Phase 2 forward outcome verification."
+      "notes": "Logged 137 immutable records. Surpassed minimum 60 shadow verdicts threshold. Calibration dataset is successfully structured for Phase 2 forward outcome verification."
     },
     "ac10_gate": {
       "gate": "AC-10",
