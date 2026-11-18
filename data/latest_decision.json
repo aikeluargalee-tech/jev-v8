@@ -1,63 +1,63 @@
 {
-  "updated_at_utc": "2026-11-17T22:12:13.816782+00:00",
-  "updated_at_myt": "2026-11-18 06:12:13 MYT",
+  "updated_at_utc": "2026-11-18T04:10:14.584331+00:00",
+  "updated_at_myt": "2026-11-18 12:10:14 MYT",
   "symbol": "BTC",
   "venue": "kraken",
   "pair": "BTC/USD",
   "profiles": {
     "SWING": {
-      "run_id": "eb4f99a1-fdc9-49eb-8a25-65d1a0a4deaa",
-      "ts_utc": "2026-11-17T22:11:57.880272+00:00",
-      "ts_local_myt": "2026-11-18 06:11:57 MYT",
+      "run_id": "ee44503a-53ed-4693-b6f6-50240fffbb9e",
+      "ts_utc": "2026-11-18T04:09:57.514892+00:00",
+      "ts_local_myt": "2026-11-18 12:09:57 MYT",
       "profile": "SWING",
       "rule_ver": "v8.0",
       "shadow_mode": false,
       "market": {
         "venue": "kraken",
         "pair": "BTC/USD",
-        "last_price": 64409.0,
-        "last_candle_close_ts": "2026-11-17T20:00:00+00:00",
-        "freshness_market_s": 6.78,
-        "freshness_funding_s": 0.92,
-        "funding_rate_pct": 0.0087474303803144,
-        "open_interest_usd": 149123555.58,
+        "last_price": 64338.6,
+        "last_candle_close_ts": "2026-11-18T04:00:00+00:00",
+        "freshness_market_s": 7.71,
+        "freshness_funding_s": 1.05,
+        "funding_rate_pct": 0.007298142802616,
+        "open_interest_usd": 143307932.75,
         "is_fallback": false,
         "is_synthetic": false
       },
       "features": {
-        "ema20": 65386.28,
-        "ema50": 68365.56,
-        "ema200": 75435.65,
-        "rsi14": 30.79,
+        "ema20": 65246.79,
+        "ema50": 68077.91,
+        "ema200": 75232.86,
+        "rsi14": 39.06,
         "rsi_dir": "falling",
-        "atr14": 1241.12,
-        "atr_pct": 1.95,
-        "vol_z": 1.19,
-        "cvd_24h": -488.03,
-        "er20": 0.3252,
-        "er_regime": "transitional",
+        "atr14": 1235.32,
+        "atr_pct": 1.92,
+        "vol_z": -0.18,
+        "cvd_24h": 104.49,
+        "er20": 0.117,
+        "er_regime": "chop",
         "bos": "INSIDE_RANGE",
-        "range_high": 67451.5,
+        "range_high": 66127.4,
         "range_low": 61970.3,
         "macro_trend": "neutral",
-        "ema20_1d": 73049.6,
-        "ema50_1d": 76608.92,
-        "ema200_1d": 75129.58
+        "ema20_1d": 72271.26,
+        "ema50_1d": 76148.83,
+        "ema200_1d": 75003.09
       },
       "categorical": {
         "profile": "SWING",
         "rule_ver": "v8.0",
-        "ts_utc": "2026-11-17T22:11:57.880272+00:00",
+        "ts_utc": "2026-11-18T04:09:57.514892+00:00",
         "market_cat": {
           "ema_stack": "bearish",
           "ema200_pos": "below",
           "rsi_cat": "neutral_low",
           "rsi_dir": "falling",
           "vol_regime": "normal",
-          "vol_z": 1.19,
+          "vol_z": -0.18,
           "cvd_trend": "neutral",
-          "er20": 0.3252,
-          "er_regime": "transitional",
+          "er20": 0.117,
+          "er_regime": "chop",
           "bos": "INSIDE_RANGE"
         },
         "derivatives_cat": {
@@ -99,14 +99,14 @@
           "efficiency": "neutral"
         },
         "conflicts": [
-          "Low confluence across pillars"
+          "Kaufman ER20 (0.1170 < 0.25): Consolidation/chop regime detected. Hard chop gate forces ABSTAIN."
         ],
         "final_verdict": "ABSTAIN",
         "final_confidence_band": "Low",
         "final_confidence_raw": 0.45,
         "final_confidence_raw_label": "uncalibrated",
         "reasons": [
-          "Low confluence across pillars"
+          "Kaufman ER20 (0.1170 < 0.25): Consolidation/chop regime detected. Hard chop gate forces ABSTAIN."
         ],
         "data_gates_passed": true,
         "degraded_flags": []
@@ -123,58 +123,58 @@
       }
     },
     "DAY_CONTEXT": {
-      "run_id": "c819214d-25af-49a6-bbbb-cfcb86405360",
-      "ts_utc": "2026-11-17T22:12:05.177158+00:00",
-      "ts_local_myt": "2026-11-18 06:12:05 MYT",
+      "run_id": "fa99ab1a-2820-4b6a-8012-4bf1bbf29df7",
+      "ts_utc": "2026-11-18T04:10:05.748094+00:00",
+      "ts_local_myt": "2026-11-18 12:10:05 MYT",
       "profile": "DAY_CONTEXT",
       "rule_ver": "v8.0",
       "shadow_mode": false,
       "market": {
         "venue": "kraken",
         "pair": "BTC/USD",
-        "last_price": 64432.9,
-        "last_candle_close_ts": "2026-11-17T22:00:00+00:00",
-        "freshness_market_s": 8.12,
-        "freshness_funding_s": 5.53,
-        "funding_rate_pct": 0.008746752168396,
-        "open_interest_usd": 149177543.63,
+        "last_price": 64354.0,
+        "last_candle_close_ts": "2026-11-18T04:00:00+00:00",
+        "freshness_market_s": 8.32,
+        "freshness_funding_s": 1.06,
+        "funding_rate_pct": 0.00729848865304,
+        "open_interest_usd": 143342234.74,
         "is_fallback": false,
         "is_synthetic": false
       },
       "features": {
-        "ema20": 64024.16,
-        "ema50": 64192.62,
-        "ema200": 64615.63,
-        "rsi14": 57.65,
+        "ema20": 64430.62,
+        "ema50": 64399.56,
+        "ema200": 64567.63,
+        "rsi14": 48.67,
         "rsi_dir": "falling",
-        "atr14": 267.15,
-        "atr_pct": 0.42,
-        "vol_z": -0.79,
-        "cvd_24h": 112.43,
-        "er20": 0.3081,
-        "er_regime": "transitional",
+        "atr14": 216.28,
+        "atr_pct": 0.34,
+        "vol_z": -0.71,
+        "cvd_24h": 105.15,
+        "er20": 0.1215,
+        "er_regime": "chop",
         "bos": "INSIDE_RANGE",
-        "range_high": 64594.8,
-        "range_low": 63382.3,
+        "range_high": 65184.1,
+        "range_low": 64072.5,
         "macro_trend": "neutral",
-        "ema20_1d": 73049.6,
-        "ema50_1d": 76608.92,
-        "ema200_1d": 75129.58
+        "ema20_1d": 72271.26,
+        "ema50_1d": 76148.83,
+        "ema200_1d": 75003.09
       },
       "categorical": {
         "profile": "DAY_CONTEXT",
         "rule_ver": "v8.0",
-        "ts_utc": "2026-11-17T22:12:05.177158+00:00",
+        "ts_utc": "2026-11-18T04:10:05.748094+00:00",
         "market_cat": {
-          "ema_stack": "bearish",
+          "ema_stack": "neutral",
           "ema200_pos": "below",
-          "rsi_cat": "neutral_high",
+          "rsi_cat": "neutral",
           "rsi_dir": "falling",
           "vol_regime": "normal",
-          "vol_z": -0.79,
+          "vol_z": -0.71,
           "cvd_trend": "neutral",
-          "er20": 0.3081,
-          "er_regime": "transitional",
+          "er20": 0.1215,
+          "er_regime": "chop",
           "bos": "INSIDE_RANGE"
         },
         "derivatives_cat": {
@@ -210,39 +210,27 @@
       },
       "deterministic": {
         "pillars": {
-          "technicals": "bearish",
+          "technicals": "neutral",
           "derivatives": "bearish",
           "social": "neutral",
           "efficiency": "neutral"
         },
-        "conflicts": [],
-        "final_verdict": "SELL",
-        "final_confidence_band": "Medium",
-        "final_confidence_raw": 0.65,
+        "conflicts": [
+          "Kaufman ER20 (0.1215 < 0.25): Consolidation/chop regime detected. Hard chop gate forces ABSTAIN."
+        ],
+        "final_verdict": "ABSTAIN",
+        "final_confidence_band": "Low",
+        "final_confidence_raw": 0.45,
         "final_confidence_raw_label": "uncalibrated",
         "reasons": [
-          "Pillars aligned: Technicals bearish, Derivatives bearish, Social neutral, Efficiency neutral"
+          "Kaufman ER20 (0.1215 < 0.25): Consolidation/chop regime detected. Hard chop gate forces ABSTAIN."
         ],
         "data_gates_passed": true,
         "degraded_flags": []
       },
       "levels": {
-        "has_valid_levels": true,
-        "entry_zone": [
-          64368.5,
-          64497.3
-        ],
-        "stop": {
-          "price": 64833.6,
-          "pct": 0.62,
-          "atr_multiple": 1.5
-        },
-        "target_primary": null,
-        "target_extended": null,
-        "method": "ATR 1.5x intraday context only",
-        "expiry_ts": null,
-        "invalidation": "15m close > 64833.6",
-        "warning": "No order placed. Intraday context only."
+        "has_valid_levels": false,
+        "reason": "Levels suppressed on ABSTAIN"
       },
       "cost": {
         "tweet_cost_usd": 0.0,
@@ -254,23 +242,23 @@
   },
   "calibration": {
     "dataset_summary": {
-      "total_recorded_verdicts": 515,
+      "total_recorded_verdicts": 517,
       "shadow_mode_verdicts": 122,
       "min_verdicts_threshold": 60,
       "calibration_dataset_ready": true,
       "confidence_band_distribution": {
         "High": 0,
         "Medium": 13,
-        "Low": 500,
+        "Low": 502,
         "None": 2
       },
       "verdict_distribution": {
-        "ABSTAIN": 500,
+        "ABSTAIN": 502,
         "NO_VERDICT": 2,
         "SELL": 13
       },
       "ac10_gate_status": "READY_FOR_PHASE_2_CALIBRATION",
-      "notes": "Logged 515 immutable records. Surpassed minimum 60 shadow verdicts threshold. Calibration dataset is successfully structured for Phase 2 forward outcome verification."
+      "notes": "Logged 517 immutable records. Surpassed minimum 60 shadow verdicts threshold. Calibration dataset is successfully structured for Phase 2 forward outcome verification."
     },
     "ac10_gate": {
       "gate": "AC-10",
